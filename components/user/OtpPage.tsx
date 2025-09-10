@@ -57,11 +57,13 @@ export default function OtpPage() {
 
       const decoded: JwtPayload = jwtDecode(access_token);
 
-      if (decoded.role === "Admin") {
+      if (decoded.role === "Claim Manager") {
         router.push("/adminDash");
       } else if (decoded.role === "Contractor") {
         router.push("/contractorDash");
-      } else {
+      } else if (decoded.role === "Insurance Representative") {
+        router.push("/insuranseRepDash");
+      }else {
         router.push("/dashboard");
       }
     },

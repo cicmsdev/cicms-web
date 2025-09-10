@@ -12,8 +12,9 @@ import { Eye, EyeOff } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { resetUserPassword } from "../../services/password/password.api";
 import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 
-// ✅ Zod validation schema
+// Zod validation schema
 const resetPasswordSchema = z
   .object({
     old_password: z.string().min(8, "Existing password must be at least 8 characters"),
@@ -42,24 +43,30 @@ export default function ResetPasswordPage() {
     resolver: zodResolver(resetPasswordSchema),
   });
 
-  // ✅ Connect API with react-query mutation
+  // Connect API with react-query mutation
   const resetMutation = useMutation({
-    mutationFn: (data: ResetPasswordFormData) => {
+    mutationFn: async (data: ResetPasswordFormData) => {
       const email = localStorage.getItem("auth_email") || "";
       return resetUserPassword({ email, ...data });
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
+      toast.success(res?.message ?? "Password changed successfully");
       router.push("/login");
     },
     onError: (error: any) => {
-      setErrorMessage(error.message || "Password reset failed. Try again.");
+      const msg = error?.message || "Password reset failed. Try again.";
+      toast.error(msg);
     },
   });
 
   const onSubmit = (data: ResetPasswordFormData) => {
-    setErrorMessage("");
-    resetMutation.mutate(data);
+    toast.promise(resetMutation.mutateAsync(data), {
+      loading: "Resetting password...",
+      success: "Password changed successfully!",
+      error: (err: any) => err?.message ?? "Password reset failed.",
+    });
   };
+
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
@@ -164,7 +171,7 @@ export default function ResetPasswordPage() {
               <Button
                 type="submit"
                 disabled={resetMutation.isPending}
-                className="w-full bg-[#0a2045] hover:bg-[#142c63] text-white h-10 sm:h-12 text-sm sm:text-base"
+                className="w-2/4 bg-[#0a2045] hover:bg-[#142c63] text-white h-10 sm:h-12 text-sm sm:text-base"
                 label={resetMutation.isPending ? "Resetting..." : "RESET PASSWORD"}
               >
                 {resetMutation.isPending ? "Resetting..." : "RESET PASSWORD"}

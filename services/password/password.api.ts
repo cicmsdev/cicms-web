@@ -1,7 +1,7 @@
 // services/auth/password.api.ts
 import axios from "axios";
-import { API_BASE_URL } from "../../lib/constants";
-import { ChangePassword } from "../../lib/passwordTypes"; 
+import { API_BASE_URL } from "../../src/lib/constants";
+import { ChangePassword } from "../../src/lib/passwordTypes"; 
 
 //Change password
 export const changePassword = async (dto: ChangePassword) => {

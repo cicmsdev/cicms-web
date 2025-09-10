@@ -1,5 +1,5 @@
 import axios from "axios";
-import { API_BASE_URL } from "../../lib/constants";
+import { API_BASE_URL } from "../../src/lib/constants";
 
 //handle login service
 export const login = async (email: string, password: string) => {

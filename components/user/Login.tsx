@@ -12,6 +12,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { login } from "../../services/auth/auth.api";
 import { Eye, EyeOff } from "lucide-react"; 
+import toast from "react-hot-toast"; 
 
 // ✅ Zod validation schema
 const loginSchema = z.object({
@@ -38,7 +39,7 @@ export default function LoginPage() {
   const loginMutation = useMutation({
     mutationFn: (data: LoginFormData) => login(data.email, data.password),
     onSuccess: (data) => {
-      const { mustChangePassword, userId, role } = data; 
+      const { mustChangePassword, userId, role, message } = data; 
 
       // Save session data
       localStorage.setItem("auth_email", data.email);
@@ -46,13 +47,20 @@ export default function LoginPage() {
 
       // Redirect based on server response
       if (mustChangePassword) {
+        toast.success("Login successful — please change your password.");
         router.push("/resetPassword");
       } else {
+        toast.success(message ?? "OTP sent. Check your email.");
         router.push("/verify-otp");
       }
     },
-    onError: () => {
-      setErrorMessage("Invalid credentials, please try again.");
+    onError: (err: any) => {
+      const msg =
+        err?.message ||
+        err?.response?.data?.message ||
+        "Invalid credentials, please try again.";
+      setErrorMessage(msg); 
+      toast.error(msg);     
     },
   });
 

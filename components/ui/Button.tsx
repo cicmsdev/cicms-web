@@ -2,7 +2,7 @@ import { ButtonHTMLAttributes, ReactNode } from "react";
 import clsx from "clsx";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  label: string;
+  label?: string;
   icon?: ReactNode;
   variant?: "primary" | "outline" | "secondary" | "pink";
   size?: "sm" | "md" | "lg";
