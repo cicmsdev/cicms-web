@@ -1,20 +1,20 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import Header from "./claimManagerDashboard/Header";
-import Navigation, { type Tab } from "./claimManagerDashboard/Navigation";
-import FilterPanel from "./claimManagerDashboard/FilterPanel";
-import Overview from "./claimManagerDashboard/Overview";
-import Claims from "./claimManagerDashboard/Claims";
-import ClaimDetails from "./claimManagerDashboard/AdminClaimDetails";
-import MobileNavDrawer from "./claimManagerDashboard/MobileNavDrawer";
-import MobileFilterDrawer from "./claimManagerDashboard/MobileFilterDrawer";
+import Header from "./evaluatorDashboard/Header";
+import Navigation, { type Tab } from "./evaluatorDashboard/Navigation";
+import FilterPanel from "./evaluatorDashboard/FilterPanel";
+import Overview from "./evaluatorDashboard/Overview";
+import Claims from "./evaluatorDashboard/evaluatorClaims";
+import ClaimDetails from "./evaluatorDashboard/evaluatorClaimDetails";
+import MobileNavDrawer from "./evaluatorDashboard/MobileNavDrawer";
+import MobileFilterDrawer from "./evaluatorDashboard/MobileFilterDrawer";
 
 import type { QueryClaimsParams } from "@/lib/claims";
 import { UiClaim, UiFilters, toUiClaim, uiToStatus } from "@/lib/uiClaims";
-import { getManagerDashboard, listManagerClaims } from "../../services/claims/manager/manager.api";
+import { getEvaluatorDashboard, listEvaluatorClaims } from "../../services/claims/evaluator/evaluator.api";
 
 /* simple placeholders so tabs work now */
 function DocumentsPlaceholder() {
@@ -34,10 +34,11 @@ function NotificationsPlaceholder() {
   );
 }
 
-export default function managerDashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>("claims");
+export default function EvaluatorDashboard() {
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   const showFilters = activeTab === "claims";
 
@@ -74,15 +75,15 @@ export default function managerDashboard() {
     error: claimsErrObj,
     refetch: refetchClaims,
   } = useQuery({
-    queryKey: ["insurerClaims", params],
-    queryFn: () => listManagerClaims(params),
+    queryKey: ["evaluatorClaims", params],
+    queryFn: () => listEvaluatorClaims(params),
     staleTime: 30_000,
   });
 
   // Dashboard summary/recent
   const { data: dashboard, isLoading: dashLoading } = useQuery({
-    queryKey: ["insurerDashboard"],
-    queryFn: () => getManagerDashboard(),
+    queryKey: ["evaluatorDashboard"],
+    queryFn: () => getEvaluatorDashboard(),
     staleTime: 60_000,
   });
 
@@ -111,6 +112,18 @@ export default function managerDashboard() {
 
   // Selected claim for details
   const [selectedClaim, setSelectedClaim] = useState<UiClaim | null>(null);
+
+  // Handle claim updates (for real-time status changes)
+  const handleClaimUpdate = (claimId: string) => {
+    // Invalidate and refetch queries to update the UI
+    queryClient.invalidateQueries({ queryKey: ["evaluatorClaims", params] });
+    queryClient.invalidateQueries({ queryKey: ["evaluatorDashboard"] });
+    
+    // If the updated claim is the currently selected one, refetch its details
+    if (selectedClaim && selectedClaim.id === claimId) {
+      queryClient.invalidateQueries({ queryKey: ["claimDetails", claimId] });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -193,6 +206,7 @@ export default function managerDashboard() {
         <ClaimDetails
           selectedClaim={selectedClaim}
           onClose={() => setSelectedClaim(null)}
+          onUpdate={handleClaimUpdate}
         />
       )}
     </div>

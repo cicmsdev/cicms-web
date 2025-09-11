@@ -63,8 +63,8 @@ export default function OtpPage() {
         router.push("/contractorDash");
       } else if (decoded.role === "Insurance Representative") {
         router.push("/insuranseRepDash");
-      }else {
-        router.push("/dashboard");
+      }else if (decoded.role === "Evaluator"){
+        router.push("/evaluatorDashboard");
       }
     },
     onError: () => {

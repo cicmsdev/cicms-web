@@ -35,7 +35,7 @@ function NotificationsPlaceholder() {
 }
 
 export default function ContractorDashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>("claims");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 

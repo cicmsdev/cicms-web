@@ -104,7 +104,9 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
   const claimId = selectedClaim?.id ?? null;
 
   const [evalSearch, setEvalSearch] = useState("");
-  const [selectedEvaluatorId, setSelectedEvaluatorId] = useState<string | null>(null);
+  const [selectedEvaluatorId, setSelectedEvaluatorId] = useState<string | null>(
+    null
+  );
 
   /* ----------------------------- data fetching ----------------------------- */
   const {
@@ -133,15 +135,19 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
   const fc = fullClaim as any;
 
   /* ------------------------------- computed UI ----------------------------- */
-  const title = fc?.ClaimTitle ?? selectedClaim?.projectName ?? "Untitled claim";
+  const title =
+    fc?.ClaimTitle ?? selectedClaim?.projectName ?? "Untitled claim";
 
   // Header status label (works with either API enum or UI label)
   const headerStatusLabel =
-    uiStatusLabel(fc?.status) || uiStatusLabel(selectedClaim?.status) || "Submitted";
+    uiStatusLabel(fc?.status) ||
+    uiStatusLabel(selectedClaim?.status) ||
+    "Submitted";
 
   const date =
     (fc?.submissionDate && new Date(fc.submissionDate).toLocaleDateString()) ||
-    (selectedClaim?.incidentDate && new Date(selectedClaim.incidentDate).toLocaleDateString()) ||
+    (selectedClaim?.incidentDate &&
+      new Date(selectedClaim.incidentDate).toLocaleDateString()) ||
     "";
 
   // Safer doc count
@@ -176,37 +182,51 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
       : undefined);
 
   const canAssignNow =
-    !!backendStatus && (ALLOWED_STATUSES as readonly string[]).includes(backendStatus);
+    !!backendStatus &&
+    (ALLOWED_STATUSES as readonly string[]).includes(backendStatus);
 
   const explainStatusGate = (status?: string) => {
     if (!status) return "Claim status is unknown. Refresh and try again.";
     const nice = status.replaceAll("_", " ");
-    if (status === "SUBMITTED") return "Approve the claim first, then you can assign an evaluator.";
+    if (status === "SUBMITTED")
+      return "Approve the claim first, then you can assign an evaluator.";
     if (status === "REJECTED") return "Rejected claims cannot be assigned.";
     if (status === "RESOLVED") return "Resolved claims cannot be assigned.";
-    if (status === "RESOLVED_IN_COURT") return "Court-resolved claims cannot be assigned.";
+    if (status === "RESOLVED_IN_COURT")
+      return "Court-resolved claims cannot be assigned.";
     return `You can assign only when the claim is Approved (new) or In Evaluation (reassign). Current status: ${nice}.`;
   };
 
   /* --------------------------- assignment mutation ------------------------- */
   const { mutate: doAssignEvaluator, isPending: assigning } = useMutation({
     mutationFn: async () => {
-      if (!claimId || !selectedEvaluatorId) throw new Error("Pick an evaluator first.");
+      if (!claimId || !selectedEvaluatorId)
+        throw new Error("Pick an evaluator first.");
       await assignManagerEvaluator(claimId, selectedEvaluatorId);
     },
     onSuccess: async () => {
       toast.success("Evaluator assigned. Status moved to In Evaluation.");
       setDetailsTab("activity");
       setSelectedEvaluatorId(null);
+
+      // make sure all manager dashboards/lists refresh
       await Promise.allSettled([
+        // refresh the drawer details
         qc.invalidateQueries({ queryKey: ["claimDetails", claimId] }),
-        qc.invalidateQueries({ queryKey: ["insurerClaims"] }),
+        // refresh the Manager claims table (any params)
+        qc.invalidateQueries({ queryKey: ["ManagerClaims"] }),
+        // refresh the Overview counters/cards
+        qc.invalidateQueries({ queryKey: ["ManagerDashboard"] }),
+        // optional: if you show evaluator 'assignedCount'
+        qc.invalidateQueries({ queryKey: ["managerEvaluators"] }),
       ]);
     },
-    onError: async (e: any) => {
-      // eslint-disable-next-line no-console
+    onError: (e: any) => {
       console.error("assign error", e?.response?.data ?? e);
-      const msg = e?.response?.data?.message || e?.message || "Failed to assign evaluator";
+      const msg =
+        e?.response?.data?.message ||
+        e?.message ||
+        "Failed to assign evaluator";
       toast.error(msg);
     },
   });
@@ -236,7 +256,9 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
           {/* Header */}
           <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b px-6 py-4 flex items-center justify-between">
             <div className="min-w-0">
-              <h3 className="text-xl font-bold text-[#0a2045] truncate">{title}</h3>
+              <h3 className="text-xl font-bold text-[#0a2045] truncate">
+                {title}
+              </h3>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span
                   className={`text-[11px] px-2 py-1 rounded-full ${statusBadgeClass(
@@ -327,7 +349,9 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                 <div>
                   <div className="flex items-center gap-2">
                     <Building2 size={16} className="text-slate-500" />
-                    <span className="text-slate-500 min-w-[92px]">Company:</span>
+                    <span className="text-slate-500 min-w-[92px]">
+                      Company:
+                    </span>
                     <span className="font-medium">{companyName || "—"}</span>
                   </div>
                   <div className="mt-1 pl-6">
@@ -351,7 +375,9 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                   <div className="flex items-center gap-2">
                     <Users size={16} className="text-slate-500" />
                     <span className="text-slate-500 min-w-[92px]">Reps:</span>
-                    <span className="font-medium">{representatives.length || 0}</span>
+                    <span className="font-medium">
+                      {representatives.length || 0}
+                    </span>
                   </div>
                   {representatives.map((r: any) => (
                     <li key={r.id ?? r.email ?? r.name} className="py-2">
@@ -388,7 +414,9 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                 {/* Evaluator */}
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-500 min-w-[92px]">Evaluator:</span>
+                    <span className="text-slate-500 min-w-[92px]">
+                      Evaluator:
+                    </span>
                     <span className="inline-flex items-center gap-2 font-medium">
                       <User size={14} className="text-slate-500" />
                       {evaluatorName || "Unassigned"}
@@ -436,8 +464,7 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                 )}
                 {(fc?.documents ?? []).map((rawDoc: any, idx: number) => {
                   const docId = rawDoc?.documentId ?? rawDoc?.id ?? null;
-                  const filePath =
-                    rawDoc?.filePath ?? "";
+                  const filePath = rawDoc?.filePath ?? "";
                   const nameFromPath =
                     typeof filePath === "string" && filePath.length
                       ? filePath.split(/[\\/]/).pop()
@@ -446,40 +473,60 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                     rawDoc?.name ||
                     rawDoc?.filename ||
                     nameFromPath ||
-                    (docId ? `Document ${String(docId).slice(0, 6)}` : `Document ${idx + 1}`);
+                    (docId
+                      ? `Document ${String(docId).slice(0, 6)}`
+                      : `Document ${idx + 1}`);
                   const createdAt = rawDoc?.createdAt || rawDoc?.uploadDate;
-                  const createdAtStr = createdAt ? new Date(createdAt).toLocaleString() : "";
+                  const createdAtStr = createdAt
+                    ? new Date(createdAt).toLocaleString()
+                    : "";
                   const downloadUrl = docId
                     ? `${API_BASE_URL}/documents/${docId}/download`
                     : rawDoc?.url || null;
-                  const docType: string = rawDoc?.documentType ?? rawDoc?.type ?? "";
+                  const docType: string =
+                    rawDoc?.documentType ?? rawDoc?.type ?? "";
                   const typeLabel = humanize(docType);
-                  const typeClass = TYPE_COLORS[docType] ?? "bg-slate-100 text-slate-700";
+                  const typeClass =
+                    TYPE_COLORS[docType] ?? "bg-slate-100 text-slate-700";
                   const uploader = rawDoc?.uploader;
                   const uploaderName = uploader?.name ?? "";
                   const uploaderEmail = uploader?.email ?? "";
                   const uploaderPhone = uploader?.phoneNumber ?? "";
 
                   return (
-                    <div key={docId ?? idx} className="border rounded-lg p-3 hover:shadow-sm transition">
+                    <div
+                      key={docId ?? idx}
+                      className="border rounded-lg p-3 hover:shadow-sm transition"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <FileText size={16} className="shrink-0 text-slate-500" />
-                            <p className="text-sm font-semibold truncate">{displayName}</p>
+                            <FileText
+                              size={16}
+                              className="shrink-0 text-slate-500"
+                            />
+                            <p className="text-sm font-semibold truncate">
+                              {displayName}
+                            </p>
                           </div>
                           {createdAtStr && (
-                            <p className="text-xs text-slate-500 mt-1">{createdAtStr}</p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {createdAtStr}
+                            </p>
                           )}
                           {typeLabel && (
-                            <span className={`inline-block mt-2 text-[10px] px-2 py-1 rounded-full uppercase tracking-wide ${typeClass}`}>
+                            <span
+                              className={`inline-block mt-2 text-[10px] px-2 py-1 rounded-full uppercase tracking-wide ${typeClass}`}
+                            >
                               {typeLabel}
                             </span>
                           )}
                           {(uploaderName || uploaderEmail || uploaderPhone) && (
                             <div className="mt-2 text-xs text-slate-600 space-y-1">
                               <div className="flex items-center gap-1">
-                                <span className="text-slate-500">Uploaded by:</span>
+                                <span className="text-slate-500">
+                                  Uploaded by:
+                                </span>
                                 <span className="inline-flex items-center gap-1 font-medium">
                                   <User size={12} className="text-slate-500" />
                                   {uploaderName || "—"}
@@ -487,12 +534,18 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                               </div>
                               <div className="flex flex-wrap items-center gap-3 pl-4">
                                 {uploaderEmail && (
-                                  <a href={`mailto:${uploaderEmail}`} className="inline-flex items-center gap-1 hover:underline break-all">
+                                  <a
+                                    href={`mailto:${uploaderEmail}`}
+                                    className="inline-flex items-center gap-1 hover:underline break-all"
+                                  >
                                     <Mail size={12} /> {uploaderEmail}
                                   </a>
                                 )}
                                 {uploaderPhone && (
-                                  <a href={`tel:${uploaderPhone}`} className="inline-flex items-center gap-1 hover:underline">
+                                  <a
+                                    href={`tel:${uploaderPhone}`}
+                                    className="inline-flex items-center gap-1 hover:underline"
+                                  >
                                     <Phone size={12} /> {uploaderPhone}
                                   </a>
                                 )}
@@ -513,7 +566,9 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                               Download
                             </a>
                           ) : (
-                            <span className="text-xs text-slate-400">No link</span>
+                            <span className="text-xs text-slate-400">
+                              No link
+                            </span>
                           )}
                         </div>
                       </div>
@@ -549,21 +604,33 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                   const reasonText = a.reason ?? "";
 
                   return (
-                    <div key={key} className="border rounded-lg p-3 hover:shadow-sm transition">
+                    <div
+                      key={key}
+                      className="border rounded-lg p-3 hover:shadow-sm transition"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <User size={16} className="text-slate-500 shrink-0" />
-                            <p className="text-sm font-medium truncate">{actorName}</p>
+                            <User
+                              size={16}
+                              className="text-slate-500 shrink-0"
+                            />
+                            <p className="text-sm font-medium truncate">
+                              {actorName}
+                            </p>
                           </div>
-                          <p className="text-xs text-slate-500 mt-1">{whenStr}</p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {whenStr}
+                          </p>
                           <div className="mt-2 text-sm">
                             <span className="font-medium">{action}</span>
                             {(fromStatus || toStatus) && (
                               <span className="ml-1 inline-flex items-center gap-1">
                                 {fromStatus ? (
                                   <span
-                                    className={`px-1.5 py-0.5 rounded ${statusBadgeClass(fromStatus)}`}
+                                    className={`px-1.5 py-0.5 rounded ${statusBadgeClass(
+                                      fromStatus
+                                    )}`}
                                   >
                                     {uiStatusLabel(fromStatus)}
                                   </span>
@@ -573,7 +640,9 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                                 <span className="mx-1">→</span>
                                 {toStatus ? (
                                   <span
-                                    className={`px-1.5 py-0.5 rounded ${statusBadgeClass(toStatus)}`}
+                                    className={`px-1.5 py-0.5 rounded ${statusBadgeClass(
+                                      toStatus
+                                    )}`}
                                   >
                                     {uiStatusLabel(toStatus)}
                                   </span>
@@ -608,12 +677,18 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                       {evaluatorName || "Unassigned"}
                     </span>
                     {evaluatorEmail && (
-                      <a href={`mailto:${evaluatorEmail}`} className="ml-3 text-slate-600 hover:underline">
+                      <a
+                        href={`mailto:${evaluatorEmail}`}
+                        className="ml-3 text-slate-600 hover:underline"
+                      >
                         {evaluatorEmail}
                       </a>
                     )}
                     {evaluatorPhone && (
-                      <a href={`tel:${evaluatorPhone}`} className="ml-3 text-slate-600 hover:underline">
+                      <a
+                        href={`tel:${evaluatorPhone}`}
+                        className="ml-3 text-slate-600 hover:underline"
+                      >
                         {evaluatorPhone}
                       </a>
                     )}
@@ -632,23 +707,29 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                       placeholder="Search by name, email, or phone"
                       className="w-full border rounded-lg px-3 py-2 pl-9 text-sm"
                     />
-                    <Search size={16} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search
+                      size={16}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Showing up to 50 results. Type to narrow down.
-                  </p>
                 </div>
 
                 {/* Evaluators list */}
                 <div className="border rounded-lg divide-y max-h-64 overflow-auto">
                   {evalsLoading && (
-                    <div className="p-3 text-sm text-slate-500">Loading evaluators…</div>
+                    <div className="p-3 text-sm text-slate-500">
+                      Loading evaluators…
+                    </div>
                   )}
                   {evalsError && (
-                    <div className="p-3 text-sm text-red-600">Failed to load evaluators</div>
+                    <div className="p-3 text-sm text-red-600">
+                      Failed to load evaluators
+                    </div>
                   )}
                   {!evalsLoading && !evalsError && evaluators.length === 0 && (
-                    <div className="p-3 text-sm text-slate-500">No evaluators found.</div>
+                    <div className="p-3 text-sm text-slate-500">
+                      No evaluators found.
+                    </div>
                   )}
 
                   {evaluators.map((ev) => (
@@ -658,13 +739,19 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                     >
                       <div className="min-w-0">
                         <div className="font-medium truncate">{ev.name}</div>
-                        <div className="text-xs text-slate-600 truncate">{ev.email}</div>
+                        <div className="text-xs text-slate-600 truncate">
+                          {ev.email}
+                        </div>
                         {ev.phoneNumber && (
-                          <div className="text-xs text-slate-600">{ev.phoneNumber}</div>
+                          <div className="text-xs text-slate-600">
+                            {ev.phoneNumber}
+                          </div>
                         )}
                         <div className="mt-1 text-[11px] text-slate-500">
                           Assigned claims: <b>{ev.assignedCount}</b>
-                          {ev.insuranceCompany?.name ? ` · ${ev.insuranceCompany.name}` : ""}
+                          {ev.insuranceCompany?.name
+                            ? ` · ${ev.insuranceCompany.name}`
+                            : ""}
                         </div>
                       </div>
 
@@ -680,44 +767,49 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                   ))}
                 </div>
 
-                {/* Submit */}
+                {/* Submit - Buttons in one row */}
                 <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => {
-                      if (!selectedEvaluatorId) {
-                        toast.error("Pick an evaluator first.");
-                        return;
-                      }
-                      if (!canAssignNow) {
-                        toast.error(explainStatusGate(backendStatus));
-                        return;
-                      }
-                      doAssignEvaluator();
-                    }}
-                    disabled={!selectedEvaluatorId || assigning}
-                    className="px-3 py-2 rounded-md bg-[#0a2045] text-white disabled:opacity-50"
-                  >
-                    {assigning ? "Assigning…" : "Assign Evaluator"}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (!selectedEvaluatorId) {
+                          toast.error("Pick an evaluator first.");
+                          return;
+                        }
+                        if (!canAssignNow) {
+                          toast.error(explainStatusGate(backendStatus));
+                          return;
+                        }
+                        doAssignEvaluator();
+                      }}
+                      disabled={!selectedEvaluatorId || assigning}
+                      className="flex-1 px-3 py-2 rounded-md bg-[#0a2045] text-white disabled:opacity-50"
+                    >
+                      {assigning ? "Assigning…" : "Assign Evaluator"}
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setSelectedEvaluatorId(null);
+                        setEvalSearch("");
+                      }}
+                      disabled={assigning}
+                      className="flex-1 px-3 py-2 rounded-md border"
+                    >
+                      Clear
+                    </button>
+                  </div>
 
                   {!canAssignNow && (
-                    <p className="text-xs text-slate-500">{explainStatusGate(backendStatus)}</p>
+                    <p className="text-xs text-slate-500">
+                      {explainStatusGate(backendStatus)}
+                    </p>
                   )}
-
-                  <button
-                    onClick={() => {
-                      setSelectedEvaluatorId(null);
-                      setEvalSearch("");
-                    }}
-                    disabled={assigning}
-                    className="px-3 py-2 rounded-md border"
-                  >
-                    Clear
-                  </button>
                 </div>
 
                 <p className="text-xs text-slate-500">
-                  Assigning an evaluator will set this claim to <b>In Evaluation</b>.
+                  Assigning an evaluator will set this claim to{" "}
+                  <b>In Evaluation</b>.
                 </p>
               </div>
             )}

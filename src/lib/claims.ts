@@ -81,6 +81,7 @@ export interface CreateClaimPayload {
 
 export interface UpdateClaimPayload {
   claimTitle?: string; // <= 25 chars
+  companyId?: string;
 }
 
 /** --- Query params (DTO mirrors) --- */
@@ -129,3 +130,5 @@ export interface DashboardResponse {
   summary: DashboardSummary;
   recent: DashboardRecentItem[];
 }
+
+

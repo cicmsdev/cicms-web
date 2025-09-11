@@ -159,31 +159,127 @@ export default function ClaimDetails({ selectedClaim, onClose, onUpdate }: Props
   }, [fc]);
 
   /* --------------------------- status update mutation ---------------------- */
-  const { mutate: doUpdateStatus, isPending: saving } = useMutation({
-    mutationFn: async () => {
-      if (!claimId || !actionStatus) throw new Error("Select a status first.");
-      await updateInsuranceClaimStatus(claimId, {
-        status: actionStatus,
-        reason: reason?.trim() || undefined,
-      });
-    },
-    onSuccess: async () => {
-      toast.success("Status updated");
-      setReason("");
-      setActionStatus(null);
-      setDetailsTab("activity");
-      // Refresh details + likely list page if it's cached
-      await Promise.allSettled([
-        qc.invalidateQueries({ queryKey: ["claimDetails", claimId] }),
-        qc.invalidateQueries({ queryKey: ["myClaims"] }),
-        qc.invalidateQueries({ queryKey: ["myClaims", undefined] }),
-      ]);
-    },
-    onError: (e: any) => {
-      const msg = e?.response?.data?.message || e?.message || "Failed to update status";
-      toast.error(msg);
-    },
-  });
+  /* --------------------------- status update mutation ---------------------- */
+const { mutate: doUpdateStatus, isPending: saving } = useMutation({
+  mutationFn: async () => {
+    if (!claimId || !actionStatus) throw new Error("Select a status first.");
+
+    return await updateInsuranceClaimStatus(claimId, {
+      status: actionStatus,
+      reason: reason?.trim() || undefined,
+    });
+  },
+
+  // ✅ OPTIMISTIC UPDATE
+  onMutate: async () => {
+    if (!claimId || !actionStatus) return;
+
+    // 1) stop background refetches that could overwrite our optimistic data
+    await qc.cancelQueries({ queryKey: ["claimDetails", claimId] });
+    await qc.cancelQueries({ queryKey: ["insurerClaims"] });
+    await qc.cancelQueries({ queryKey: ["insurerDashboard"] });
+
+    // 2) snapshot previous details cache for rollback
+    const prevDetails = qc.getQueryData<any>(["claimDetails", claimId]);
+
+    // 3) craft optimistic details (status + activity prepend)
+    const nowIso = new Date().toISOString();
+    const optimisticDetails =
+      prevDetails
+        ? {
+            ...prevDetails,
+            status: actionStatus,
+            // support any of your backend shapes for activity arrays
+            activities: [
+              {
+                id: `tmp-${nowIso}`,
+                action: "Status Updated (optimistic)",
+                fromStatus: prevDetails.status,
+                toStatus: actionStatus,
+                reason: reason?.trim() || undefined,
+                createdAt: nowIso,
+                performedBy: { name: "You" },
+              },
+              ...(Array.isArray(prevDetails.activities) ? prevDetails.activities : []),
+            ],
+            activityLogs: Array.isArray(prevDetails.activityLogs)
+              ? [
+                  {
+                    id: `tmp-${nowIso}`,
+                    action: "Status Updated (optimistic)",
+                    fromStatus: prevDetails.status,
+                    toStatus: actionStatus,
+                    reason: reason?.trim() || undefined,
+                    createdAt: nowIso,
+                    performedBy: { name: "You" },
+                  },
+                  ...prevDetails.activityLogs,
+                ]
+              : prevDetails.activityLogs,
+          }
+        : prevDetails;
+
+    // 4) write optimistic details
+    if (optimisticDetails) {
+      qc.setQueryData(["claimDetails", claimId], optimisticDetails);
+    }
+
+    // 5) update any cached insurer claim lists so tables reflect the new status
+    qc.setQueriesData(
+      { queryKey: ["insurerClaims"] },
+      (old: any) => {
+        if (!old?.data) return old;
+        return {
+          ...old,
+          data: old.data.map((c: any) =>
+            c.claimId === claimId || c.id === claimId
+              ? { ...c, status: actionStatus }
+              : c
+          ),
+        };
+      }
+    );
+
+    // 6) return context for rollback
+    return { prevDetails };
+  },
+
+  // 🧯 ROLLBACK on error + nice message
+  onError: (e: unknown, _vars, ctx) => {
+    if (ctx?.prevDetails) {
+      qc.setQueryData(["claimDetails", claimId], ctx.prevDetails);
+    }
+
+    const msg =
+      e instanceof Error
+        ? e.message
+        : typeof e === "string"
+        ? e
+        : "Failed to update status";
+
+    toast.error(msg);
+  },
+
+  // ✅ SUCCESS: light UI cleanup
+  onSuccess: (result) => {
+    toast.success(result?.message || "Status updated");
+    setReason("");
+    setActionStatus(null);
+    setDetailsTab("activity");
+    // NOTE: avoid redirect so users see the change live in the drawer
+    // router.replace("/insuranseRepDash") // ← remove this for true realtime UX
+  },
+
+  // 🔄 SETTLED: reconcile with server
+  onSettled: async () => {
+    await Promise.allSettled([
+      qc.invalidateQueries({ queryKey: ["claimDetails", claimId] }),
+      qc.invalidateQueries({ queryKey: ["insurerClaims"] }),
+      qc.invalidateQueries({ queryKey: ["insurerDashboard"] }),
+    ]);
+  },
+});
+
 
   /* -------------------------------- handlers -------------------------------- */
   const copyId = async () => {

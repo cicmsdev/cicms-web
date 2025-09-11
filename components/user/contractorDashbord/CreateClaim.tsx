@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useParams } from "next/navigation";
 import toast from "react-hot-toast";
-import { Download, Trash2 } from "lucide-react";
+import { Download, Trash2, ArrowLeft } from "lucide-react";
 
 import Input from "../../ui/Input";
 import Button from "../../ui/Button";
@@ -18,6 +18,9 @@ import {
   getMyClaim,
   updateMyClaim,
 } from "../../../services/claims/contractor/claims.api";
+// ⬇️ add this (evaluator fetcher)
+import { getEvaluatorClaim } from "../../../services/claims/evaluator/evaluator.api";
+
 import {
   createDocument,
   deleteDocument,
@@ -42,6 +45,7 @@ const ALL_DOC_TYPES = [
   "DAMAGE_REPORT",
   "POLICE_REPORT",
   "LAND_OWNERSHIP_PROOF",
+  "SITE_INSPECTION_REPORT", // added
 ] as const;
 type DocType = (typeof ALL_DOC_TYPES)[number];
 
@@ -65,9 +69,6 @@ const makeSchema = (isEdit: boolean, allowed: readonly DocType[]) =>
     .object({
       companyId: z.string().uuid("Select a valid company"),
       claimTitle: z.string().min(3).max(25).trim(),
-
-      // create: required; edit: optional/ignored (fields are disabled)
-      
       documents: z
         .array(
           z.object({
@@ -89,7 +90,6 @@ const makeSchema = (isEdit: boolean, allowed: readonly DocType[]) =>
             message: "This document type is not allowed for your role.",
           });
         }
-        // file guards
         if (!(item as any)?.file) continue;
         if (!ALLOWED_MIME.has((item.file as File).type)) {
           ctx.addIssue({
@@ -119,26 +119,47 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
   const isEdit = Boolean(claimId);
   const qc = useQueryClient();
 
-  // role-gated doc types
-  const role = typeof window !== "undefined" ? localStorage.getItem("role") : null;
+  // role
+  const role =
+    typeof window !== "undefined" ? localStorage.getItem("role") : null;
   const isContractor = (role ?? "").toUpperCase() === "CONTRACTOR";
+  const isEvaluator = (role ?? "").toUpperCase() === "EVALUATOR";
+
+  // allowed doc types per role
   const ALLOWED_FOR_USER: readonly DocType[] = isContractor
     ? (["DAMAGE_REPORT", "POLICE_REPORT", "LAND_OWNERSHIP_PROOF"] as const)
-    : ALL_DOC_TYPES;
+    : (["SITE_INSPECTION_REPORT"] as const);
 
   // companies
   const { data: companies = [], isLoading: companiesLoading } = useQuery({
     queryKey: ["insurance"],
     queryFn: listInsurance,
-    select: (res: any): Insurance[] => (Array.isArray(res) ? res : res?.data ?? []),
+    select: (res: any): Insurance[] =>
+      (Array.isArray(res) ? res : res?.data) ?? [],
   });
 
-  // existing claim (edit)
+  // existing claim (edit) — role-aware fetcher to avoid 403
   const { data: existing } = useQuery<Claim>({
-    queryKey: ["claim-edit", claimId],
-    queryFn: () => getMyClaim!(claimId as string),
-    enabled: isEdit,
+    queryKey: ["claim-edit", claimId, role],
+    queryFn: () =>
+      isContractor
+        ? getMyClaim!(claimId as string)
+        : getEvaluatorClaim!(claimId as string),
+    enabled: isEdit && !!claimId && (isContractor || isEvaluator),
   });
+
+  // Editing rules:
+  // - Contractors: editable only when SUBMITTED
+  // - Evaluators: core fields locked, but can upload SITE_INSPECTION_REPORT
+  const canEdit = isEdit
+    ? isContractor
+      ? (existing as any)?.status === "SUBMITTED"
+      : true
+    : true;
+
+  const lockCoreFields = isEvaluator || (isEdit && !canEdit); // locks company/title inputs
+  const canDeleteDocs = isContractor && canEdit; // evaluators can't delete
+  const disableDocButtons = isContractor ? isEdit && !canEdit : false; // evaluators can add/replace files
 
   // RHF
   type FormData = z.input<ReturnType<typeof makeSchema>>;
@@ -159,10 +180,11 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
   useEffect(() => {
     if (isEdit && existing) {
       reset({
-        companyId: existing.companyId ?? existing.company?.companyId ?? "",
-        claimTitle: existing.ClaimTitle ?? "",
-        phoneNumber: undefined, // do not trigger validation
-        email: undefined,       // do not trigger validation
+        companyId:
+          (existing as any)?.companyId ??
+          (existing as any)?.company?.companyId ??
+          "",
+        claimTitle: (existing as any)?.ClaimTitle ?? "",
         documents: [],
       } as any);
     }
@@ -175,17 +197,18 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
   const { mutate, isPending } = useMutation({
     mutationFn: async (payload: FormData) => {
       if (!isEdit) {
-        // CREATE
+        // CREATE (contractors only)
+        if (isEvaluator) {
+          throw new Error("Evaluators cannot create new claims.");
+        }
         const created = await createClaim({
           companyId: payload.companyId as any,
-          claimTitle: payload.claimTitle,             // required in create schema
+          claimTitle: payload.claimTitle,
         });
 
         const createdClaim = (created?.data ?? created) as any;
         const newId: string =
-          createdClaim?.claimId ??
-          createdClaim?.data?.claimId ??
-          createdClaim?.data?.claim?.claimId;
+          createdClaim?.claimId ?? createdClaim?.data?.claimId;
         if (!newId) throw new Error("Claim created but claimId missing");
 
         const toUpload = payload.documents ?? [];
@@ -201,15 +224,27 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
           );
           const failed = results.filter((r) => r.status === "rejected").length;
           if (failed > 0) {
-            toast.error(`Uploaded ${toUpload.length - failed}/${toUpload.length} documents. Some failed.`);
-          } else {
-            toast.success(`Uploaded ${toUpload.length} document${toUpload.length > 1 ? "s" : ""}.`);
+            toast.error(
+              `Uploaded ${toUpload.length - failed}/${toUpload.length} documents. Some failed.`
+            );
           }
         }
         return created;
       } else {
-        // UPDATE (only claimTitle per your DTO)
-        await updateMyClaim(claimId!, { claimTitle: payload.claimTitle });
+        // UPDATE
+        if (isContractor) {
+          // contractors can update core fields only when allowed
+          if (canEdit) {
+            await updateMyClaim(claimId!, {
+              claimTitle: payload.claimTitle,
+              companyId: payload.companyId,
+            });
+          } else {
+            // silently ignore core update if locked
+          }
+        } else {
+          // evaluator: never update core fields, they only upload documents
+        }
 
         const toUpload = payload.documents ?? [];
         if (toUpload.length > 0) {
@@ -224,9 +259,9 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
           );
           const failed = results.filter((r) => r.status === "rejected").length;
           if (failed > 0) {
-            toast.error(`Uploaded ${toUpload.length - failed}/${toUpload.length} documents. Some failed.`);
-          } else {
-            toast.success(`Uploaded ${toUpload.length} document${toUpload.length > 1 ? "s" : ""}.`);
+            toast.error(
+              `Uploaded ${toUpload.length - failed}/${toUpload.length} documents. Some failed.`
+            );
           }
         }
         await qc.invalidateQueries({ queryKey: ["claim-edit", claimId] });
@@ -234,24 +269,28 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
       }
     },
     onSuccess: () => {
-      toast.success(isEdit ? "Claim updated" : "Claim submitted");
+      toast.success(isEdit ? "Changes saved" : "Claim submitted");
       reset({ documents: [] } as any);
-      router.push("/contractorDash");
+      router.back();
     },
     onError: (err: any) => {
       const msg =
         err?.response?.data?.message ||
         err?.message ||
-        (isEdit ? "Failed to update claim" : "Failed to submit claim");
+        (isEdit ? "Failed to save changes" : "Failed to submit claim");
       toast.error(msg);
     },
   });
 
   const onSubmit = (data: FormData) => mutate(data);
 
+  // Handle back navigation
+  const handleBack = () => {
+    router.back();
+  };
+
   // existing docs (edit)
   const existingDocs: any[] = (existing as any)?.documents ?? [];
- 
 
   const handleDeleteDoc = async (documentId?: string) => {
     if (!documentId) return;
@@ -266,27 +305,72 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
 
   return (
     <div className="min-h-screen bg-white flex justify-center items-center p-4 sm:p-6 lg:p-10">
-      {/* fixed-height card; inner content scrolls */}
-      <div className="w-full max-w-xl h-[640px] sm:h-[680px] border rounded-2xl shadow-md p-6 lg:p-8">
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col h-full">
+      <div className="w-full max-w-xl border rounded-2xl shadow-md p-6 lg:p-8">
+        {/* Back Button */}
+        <button
+          type="button"
+          onClick={handleBack}
+          className="flex items-center text-[#0a2045] hover:text-[#6784c6] mb-4 transition-colors"
+        >
+          <ArrowLeft size={20} className="mr-2" />
+          Back
+        </button>
+
+        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col">
           {/* Header */}
           <div className="shrink-0">
             <h1 className="text-2xl font-semibold text-[#0a2045] mb-2">
               {isEdit ? "Update Claim" : "Create New Claim"}
             </h1>
             <p className="text-gray-500 mb-4">
-              {isEdit ? "Modify the title or attach more documents." : "Fill in the details below to submit your claim."}
+              {isEdit
+                ? isEvaluator
+                  ? "You can upload a Site Inspection Report. Core fields are locked."
+                  : "Modify the title or attach more documents."
+                : "Fill in the details below to submit your claim."}
             </p>
+
+            {/* Status Display */}
+            {isEdit && existing && (
+              <div
+                className={`p-3 rounded-lg mb-4 ${
+                  canEdit
+                    ? "bg-blue-50 border border-blue-200"
+                    : "bg-amber-50 border border-amber-200"
+                }`}
+              >
+                <p
+                  className={`text-sm ${
+                    canEdit ? "text-blue-800" : "text-amber-900"
+                  }`}
+                >
+                  <strong>Current Status:</strong>{" "}
+                  {(existing as any)?.status || "UNKNOWN"}
+                  {!canEdit && isContractor && (
+                    <span className="block mt-1">
+                      Only claims with "SUBMITTED" status can be edited by contractors.
+                    </span>
+                  )}
+                  {isEvaluator && (
+                    <span className="block mt-1">
+                      Core fields are locked for evaluators; you may upload a SITE_INSPECTION_REPORT.
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Body (scrollable) */}
-          <div className="flex-1 overflow-y-auto pr-1 space-y-5">
+          <div className="flex-1 overflow-y-auto pr-1 space-y-5 mb-6">
             {/* Company */}
             <div>
-              <label className="block text-sm font-medium mb-1 text-gray-900">Insurance Company</label>
+              <label className="block text-sm font-medium mb-1 text-gray-900">
+                Insurance Company
+              </label>
               <div className="relative">
                 <select
-                  disabled={companiesLoading || isEdit}
+                  disabled={companiesLoading || lockCoreFields}
                   className={inputLikeSelect}
                   {...register("companyId")}
                 >
@@ -311,56 +395,75 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
                 </svg>
               </div>
               {errors.companyId && (
-                <p className="text-red-500 text-xs sm:text-sm">{errors.companyId.message as string}</p>
+                <p className="text-red-500 text-xs sm:text-sm">
+                  {errors.companyId.message as string}
+                </p>
               )}
             </div>
 
             {/* Claim Title */}
             <div>
-              <label className="block text-sm font-medium mb-1 text-gray-900">Claim Title</label>
+              <label className="block text-sm font-medium mb-1 text-gray-900">
+                Claim Title
+              </label>
               <Input
                 type="text"
                 placeholder="e.g., Roof damage at Site A"
-                className="h-10 sm:h-12 text-sm sm:text-base px-3 sm:px-4 text-gray-900 w-full"
+                className={`h-10 sm:h-12 text-sm sm:text-base px-3 sm:px-4 text-gray-900 w-full ${
+                  lockCoreFields ? "opacity-50 cursor-not-allowed" : ""
+                }`}
+                disabled={lockCoreFields}
                 {...register("claimTitle")}
               />
               <div className="flex justify-between">
                 {errors.claimTitle ? (
-                  <p className="text-red-500 text-xs sm:text-sm">{errors.claimTitle.message as string}</p>
+                  <p className="text-red-500 text-xs sm:text-sm">
+                    {errors.claimTitle.message as string}
+                  </p>
                 ) : (
-                  <span className="text-xs text-gray-400">Max 25 characters</span>
+                  <span className="text-xs text-gray-400">
+                    Max 25 characters
+                  </span>
                 )}
               </div>
             </div>
 
-            
-
             {/* Existing documents (edit only) */}
             {isEdit && (
               <div className="pt-2">
-                <h3 className="text-md font-semibold text-[#0a2045] mb-2">Existing Documents</h3>
+                <h3 className="text-md font-semibold text-[#0a2045] mb-2">
+                  Existing Documents
+                </h3>
                 {existingDocs.length === 0 ? (
                   <p className="text-sm text-gray-500">No documents.</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
                     {existingDocs.map((d: any, idx: number) => {
                       const docId = d?.documentId ?? d?.id ?? null;
                       const name =
-                        d?.name ||
-                        d?.filename ||
-                        d?.filePath?.toString?.().split(/[\\/]/).pop() ||
-                        (docId ? `Document ${String(docId).slice(0, 6)}` : `Document ${idx + 1}`);
-                      const createdAtStr = d?.createdAt ? new Date(d.createdAt).toLocaleString() : "";
+                        d?.name || d?.filename || `Document ${idx + 1}`;
+                      const createdAtStr = d?.createdAt
+                        ? new Date(d.createdAt).toLocaleString()
+                        : "";
                       const downloadUrl = docId
                         ? `${API_BASE_URL}/documents/${docId}/download`
-                        : d?.url || null;
+                        : null;
                       const typeLabel = humanize(d?.documentType ?? d?.type);
 
                       return (
-                        <div key={docId ?? idx} className="border rounded-lg p-2 flex items-center justify-between gap-3">
+                        <div
+                          key={docId ?? idx}
+                          className="border rounded-lg p-2 flex items-center justify-between gap-3"
+                        >
                           <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{name}</p>
-                            {createdAtStr && <p className="text-xs text-gray-500">{createdAtStr}</p>}
+                            <p className="text-sm font-medium truncate">
+                              {name}
+                            </p>
+                            {createdAtStr && (
+                              <p className="text-xs text-gray-500">
+                                {createdAtStr}
+                              </p>
+                            )}
                             {typeLabel && (
                               <span className="mt-1 inline-block text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
                                 {typeLabel}
@@ -382,7 +485,12 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
                             <button
                               type="button"
                               onClick={() => handleDeleteDoc(docId || undefined)}
-                              className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-red-200 text-red-600 hover:bg-red-50"
+                              disabled={!canDeleteDocs}
+                              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border ${
+                                !canDeleteDocs
+                                  ? "border-gray-200 text-gray-400 cursor-not-allowed"
+                                  : "border-red-200 text-red-600 hover:bg-red-50"
+                              }`}
                             >
                               <Trash2 size={14} />
                               Delete
@@ -400,36 +508,59 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
             <div className="pt-2">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-md font-semibold text-[#0a2045]">
-                  {isEdit ? "Add More Documents (optional)" : "Attach Documents (optional)"}
+                  {isEdit
+                    ? "Add More Documents (optional)"
+                    : "Attach Documents (optional)"}
                 </h3>
                 <button
                   type="button"
                   onClick={() => append({ documentType: "", file: undefined as any })}
-                  className="inline-flex items-center px-3 py-2 text-sm rounded-lg border text-[#0a2045] hover:bg-blue-50"
+                  disabled={disableDocButtons}
+                  className={`inline-flex items-center px-3 py-2 text-sm rounded border text-[#0a2045] ${
+                    disableDocButtons
+                      ? "opacity-50 cursor-not-allowed"
+                      : "hover:bg-blue-50"
+                  }`}
                 >
                   Add document
                 </button>
               </div>
 
               {fields.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
                   {fields.map((field, idx) => {
                     const current = docs?.[idx];
                     const hasType = !!current?.documentType;
                     const currentFile = current?.file;
 
                     return (
-                      <div key={field.id} className="rounded-lg border p-3 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-start">
+                      <div
+                        key={field.id}
+                        className="rounded-lg border p-3 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-start"
+                      >
                         <div>
                           {/* Type first */}
                           <div>
-                            <label className="block text-sm font-medium mb-1 text-gray-900">Document Type</label>
+                            <label className="block text-sm font-medium mb-1 text-gray-900">
+                              Document Type
+                            </label>
                             <select
-                              className="w-full border rounded-lg px-3 py-2 text-sm text-gray-900"
+                              className={`w-full border rounded-lg px-3 py-2 text-sm text-gray-900 ${
+                                disableDocButtons ? "opacity-50 cursor-not-allowed" : ""
+                              }`}
+                              disabled={disableDocButtons}
                               {...register(`documents.${idx}.documentType` as const)}
                               onChange={(e) => {
-                                setValue(`documents.${idx}.documentType` as const, e.target.value, { shouldValidate: true });
-                                setValue(`documents.${idx}.file` as const, undefined as any, { shouldValidate: true });
+                                setValue(
+                                  `documents.${idx}.documentType` as const,
+                                  e.target.value,
+                                  { shouldValidate: true }
+                                );
+                                setValue(
+                                  `documents.${idx}.file` as const,
+                                  undefined as any,
+                                  { shouldValidate: true }
+                                );
                               }}
                             >
                               <option value="">Select type</option>
@@ -445,17 +576,23 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
                               </p>
                             )}
                             {!hasType && (
-                              <p className="text-xs text-gray-500 mt-1">Select a document type to enable the file picker.</p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                Select a document type to enable the file picker.
+                              </p>
                             )}
                           </div>
 
                           {/* File (after type) */}
                           <div className="mt-3">
-                            <label className="block text-sm font-medium mb-1 text-gray-900">File</label>
+                            <label className="block text-sm font-medium mb-1 text-gray-900">
+                              File
+                            </label>
                             {!currentFile ? (
                               <label
                                 className={`inline-flex justify-center items-center px-3 py-2 text-sm rounded border text-[#0a2045] ${
-                                  hasType ? "cursor-pointer hover:bg-blue-50" : "opacity-50 cursor-not-allowed"
+                                  hasType && !disableDocButtons
+                                    ? "cursor-pointer hover:bg-blue-50"
+                                    : "opacity-50 cursor-not-allowed"
                                 }`}
                               >
                                 {hasType ? "Select file" : "Select type first"}
@@ -463,10 +600,15 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
                                   type="file"
                                   accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
                                   className="hidden"
-                                  disabled={!hasType}
+                                  disabled={!hasType || disableDocButtons}
                                   onChange={(e) => {
                                     const f = e.target.files?.[0];
-                                    if (f) setValue(`documents.${idx}.file` as const, f, { shouldValidate: true });
+                                    if (f)
+                                      setValue(
+                                        `documents.${idx}.file` as const,
+                                        f,
+                                        { shouldValidate: true }
+                                      );
                                     e.currentTarget.value = "";
                                   }}
                                 />
@@ -476,15 +618,27 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
                                 <span className="text-sm text-gray-700">
                                   {currentFile.name} ({sizeStr(currentFile.size)})
                                 </span>
-                                <label className="inline-flex justify-center items-center px-3 py-2 text-sm rounded border cursor-pointer text-[#0a2045] hover:bg-blue-50">
+                                <label
+                                  className={`inline-flex justify-center items-center px-3 py-2 text-sm rounded border ${
+                                    disableDocButtons
+                                      ? "opacity-50 cursor-not-allowed"
+                                      : "cursor-pointer hover:bg-blue-50"
+                                  } text-[#0a2045]`}
+                                >
                                   Replace
                                   <input
                                     type="file"
                                     accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
                                     className="hidden"
+                                    disabled={disableDocButtons}
                                     onChange={(e) => {
                                       const f = e.target.files?.[0];
-                                      if (f) setValue(`documents.${idx}.file` as const, f, { shouldValidate: true });
+                                      if (f)
+                                        setValue(
+                                          `documents.${idx}.file` as const,
+                                          f,
+                                          { shouldValidate: true }
+                                        );
                                       e.currentTarget.value = "";
                                     }}
                                   />
@@ -496,7 +650,9 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
                                 {errors.documents[idx]!.file!.message as string}
                               </p>
                             )}
-                            <p className="text-xs text-gray-500 mt-1">PDF, DOC/DOCX, PNG, or JPG — up to 25MB.</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              PDF, DOC/DOCX, PNG, or JPG — up to 25MB.
+                            </p>
                           </div>
                         </div>
 
@@ -504,7 +660,12 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
                           <button
                             type="button"
                             onClick={() => remove(idx)}
-                            className="px-3 py-2 text-sm rounded border text-red-600 hover:bg-red-50"
+                            disabled={disableDocButtons}
+                            className={`px-3 py-2 text-sm rounded border ${
+                              disableDocButtons
+                                ? "text-gray-400 cursor-not-allowed"
+                                : "text-red-600 hover:bg-red-50"
+                            }`}
                           >
                             Remove
                           </button>
@@ -515,23 +676,26 @@ export default function CreateOrUpdateClaimPage({ claimId: propId }: Props) {
                 </div>
               ) : (
                 <p className="text-sm text-gray-500">
-                  No documents added. Click <span className="font-medium">Add document</span> to start.
+                  No documents added. Click{" "}
+                  <span className="font-medium">Add document</span> to start.
                 </p>
               )}
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="shrink-0 pt-4">
-            <div className="flex justify-center">
+          {/* Footer - Submit Button */}
+          <div className="shrink-0 pt-4 border-t">
+            <div className="flex justify-center mt-4">
               <Button
                 type="submit"
                 disabled={isPending}
-                className="w-2/4 bg-[#0a2045] hover:bg-[#142c63] text-white h-10 sm:h-12 text-sm sm:text-base flex justify-center items-center"
+                className={`w-full max-w-xs bg-[#0a2045] hover:bg-[#142c63] text-white h-10 sm:h-12 text-sm sm:text-base flex justify-center items-center`}
                 label={
                   isEdit
                     ? isPending
                       ? "Saving..."
+                      : isEvaluator
+                      ? "Upload Report"
                       : "Save Changes"
                     : isPending
                     ? "Submitting..."

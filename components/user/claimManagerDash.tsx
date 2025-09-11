@@ -8,7 +8,7 @@ import Navigation, { type Tab } from "./claimManagerDashboard/Navigation";
 import FilterPanel from "./claimManagerDashboard/FilterPanel";
 import Overview from "./claimManagerDashboard/Overview";
 import Claims from "./claimManagerDashboard/Claims";
-import ClaimDetails from "./claimManagerDashboard/ClaimDetails";
+import ClaimDetails from "./claimManagerDashboard/AdminClaimDetails";
 import MobileNavDrawer from "./claimManagerDashboard/MobileNavDrawer";
 import MobileFilterDrawer from "./claimManagerDashboard/MobileFilterDrawer";
 
@@ -35,7 +35,7 @@ function NotificationsPlaceholder() {
 }
 
 export default function ManagerDashboard()  {
-  const [activeTab, setActiveTab] = useState<Tab>("claims");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
