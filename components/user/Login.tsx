@@ -39,11 +39,12 @@ export default function LoginPage() {
   const loginMutation = useMutation({
     mutationFn: (data: LoginFormData) => login(data.email, data.password),
     onSuccess: (data) => {
-      const { mustChangePassword, userId, role, message } = data; 
+      const { mustChangePassword, userId, role, message, name } = data; 
 
       // Save session data
       localStorage.setItem("auth_email", data.email);
       localStorage.setItem("user_id", userId);
+      localStorage.setItem("auth_name", data.name );
 
       // Redirect based on server response
       if (mustChangePassword) {

@@ -6,6 +6,7 @@ import { jwtDecode } from "jwt-decode";
 
 interface DecodedToken {
   sub: string;
+  name: string;
   email: string;
   role: string;
   role_id: string;
@@ -48,8 +49,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   setUser(null);
   // Clear all auth-related items from localStorage
   localStorage.removeItem("access_token");
-  localStorage.removeItem("auth_email");  // Remove email
-  localStorage.removeItem("user_id");    // Remove user ID
+  localStorage.removeItem("auth_email");  
+  localStorage.removeItem("user_id");    
+  localStorage.removeItem("auth_name");  
   setIsLoading(false);
   };
 

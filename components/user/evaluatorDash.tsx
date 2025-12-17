@@ -14,31 +14,24 @@ import MobileFilterDrawer from "./evaluatorDashboard/MobileFilterDrawer";
 
 import type { QueryClaimsParams } from "@/lib/claims";
 import { UiClaim, UiFilters, toUiClaim, uiToStatus } from "@/lib/uiClaims";
-import { getEvaluatorDashboard, listEvaluatorClaims } from "../../services/claims/evaluator/evaluator.api";
-
-/* simple placeholders so tabs work now */
-function DocumentsPlaceholder() {
-  return (
-    <div className="bg-white rounded-xl shadow p-6">
-      <h2 className="text-lg font-semibold mb-2">Documents</h2>
-      <p className="text-sm text-gray-600">Coming soon.</p>
-    </div>
-  );
-}
-function NotificationsPlaceholder() {
-  return (
-    <div className="bg-white rounded-xl shadow p-6">
-      <h2 className="text-lg font-semibold mb-2">Notifications</h2>
-      <p className="text-sm text-gray-600">Coming soon.</p>
-    </div>
-  );
-}
+import {
+  getEvaluatorDashboard,
+  listEvaluatorClaims,
+} from "../../services/claims/evaluator/evaluator.api";
+import { useDmContacts } from "@/hooks/useDmContacts";
+import MessagesTab from "../chat/MessagesTab";
+import { useUnreadCount } from "@/hooks/useNotifications";
+import MyNotificationsPanel from "../notifications/MyNotificationsPanel";
+import { useMyNotificationsPaged } from "@/hooks/useNotifications";
 
 export default function EvaluatorDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const { data: unreadData } = useUnreadCount();
+  const notifCount = unreadData?.count ?? 0;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const queryClient = useQueryClient();
+    const [messagesUnread, setMessagesUnread] = useState(0);
 
   const showFilters = activeTab === "claims";
 
@@ -89,7 +82,10 @@ export default function EvaluatorDashboard() {
 
   // Transform API -> UI
   const apiClaims = claimsPage?.data ?? [];
-  const uiClaims: UiClaim[] = useMemo(() => apiClaims.map(toUiClaim), [apiClaims]);
+  const uiClaims: UiClaim[] = useMemo(
+    () => apiClaims.map(toUiClaim),
+    [apiClaims]
+  );
 
   const totalClaims = dashboard?.summary?.totalClaims ?? uiClaims.length;
 
@@ -103,7 +99,8 @@ export default function EvaluatorDashboard() {
         filters.project === "" ||
         c.projectName.toLowerCase().includes(filters.project.toLowerCase());
       const fromDateMatch =
-        !filters.fromDate || new Date(c.incidentDate) >= new Date(filters.fromDate);
+        !filters.fromDate ||
+        new Date(c.incidentDate) >= new Date(filters.fromDate);
       const toDateMatch =
         !filters.toDate || new Date(c.incidentDate) <= new Date(filters.toDate);
       return statusMatch && projectMatch && fromDateMatch && toDateMatch;
@@ -113,17 +110,33 @@ export default function EvaluatorDashboard() {
   // Selected claim for details
   const [selectedClaim, setSelectedClaim] = useState<UiClaim | null>(null);
 
+  // Selected claim for details
+
+  const [dmSearch, setDmSearch] = useState("");
+  const { data: dmPeers = [], isLoading: dmLoading } = useDmContacts(
+    dmSearch,
+    50
+  );
+
   // Handle claim updates (for real-time status changes)
   const handleClaimUpdate = (claimId: string) => {
     // Invalidate and refetch queries to update the UI
     queryClient.invalidateQueries({ queryKey: ["evaluatorClaims", params] });
     queryClient.invalidateQueries({ queryKey: ["evaluatorDashboard"] });
-    
+
     // If the updated claim is the currently selected one, refetch its details
     if (selectedClaim && selectedClaim.id === claimId) {
       queryClient.invalidateQueries({ queryKey: ["claimDetails", claimId] });
     }
   };
+
+  // latest notifications (first page, 5 items)
+  const { data: latestNotifs, isLoading: latestNotifsLoading } =
+    useMyNotificationsPaged({
+      page: 1,
+      pageSize: 5,
+      filters: { includeArchived: false }, // feel free to add unreadOnly: true if you prefer
+    });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -134,7 +147,12 @@ export default function EvaluatorDashboard() {
       />
 
       {/* Navigation */}
-      <Navigation activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Navigation
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        notifCount={notifCount}
+        messagesCount={messagesUnread}
+      />
 
       <div className="flex">
         {/* Desktop filters — only on Claims tab */}
@@ -165,19 +183,40 @@ export default function EvaluatorDashboard() {
             <>
               {activeTab === "overview" && (
                 <Overview
-                  claims={uiClaims}         // unfiltered for overview
+                  claims={uiClaims} // unfiltered for overview
                   total={totalClaims}
                   onSelectClaim={setSelectedClaim}
+                  // latest notifications props
+                  latestNotifications={latestNotifs?.notifications ?? []}
+                  latestNotificationsLoading={latestNotifsLoading}
+                  onOpenNotifications={() => setActiveTab("notifications")}
                 />
               )}
               {activeTab === "claims" && (
                 <Claims
-                  claims={filteredClaims}   // filtered for claims tab
+                  claims={filteredClaims} // filtered for claims tab
                   onSelectClaim={setSelectedClaim}
                 />
               )}
-              {activeTab === "documents" && <DocumentsPlaceholder />}
-              {activeTab === "notifications" && <NotificationsPlaceholder />}
+              {activeTab === "messages" && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    {dmLoading && (
+                      <span className="text-xs text-gray-500">
+                        Loading contacts…
+                      </span>
+                    )}
+                  </div>
+
+                  <MessagesTab
+                    claims={uiClaims}
+                    dmPeers={dmPeers}
+                    showSideSearch // ← enable search for claims/contacts
+                    onUnreadChange={setMessagesUnread}
+                  />
+                </div>
+              )}
+              {activeTab === "notifications" && <MyNotificationsPanel />}
             </>
           )}
         </main>

@@ -6,16 +6,22 @@ import type {
   UpdateInsurance,
 } from "../../src/lib/insuranceTypes";
 
-// GET /insurance
-export const listInsurance = async (): Promise<Insurance[]> => {
-  try {
-    const res = await axios.get(`${API_BASE_URL}/insurance`);
-    return res.data;
-  } catch (error: any) {
-    console.error("Error listing insurance:", error.response?.data || error.message);
-    throw error.response?.data || { message: "Failed to list insurance companies" };
-  }
-};
+// services/insurance/insurance.api.ts
+
+
+export type InsuranceOption = { companyId: string; name: string };
+
+export async function listInsuranceOptions(): Promise<InsuranceOption[]> {
+  const res = await axios.get(`${API_BASE_URL}/insurance/options`);
+  const payload = res.data;
+  // supports either plain array or { data: [...] }
+  if (Array.isArray(payload)) return payload as InsuranceOption[];
+  if (payload?.data && Array.isArray(payload.data)) return payload.data as InsuranceOption[];
+  return [];
+}
+
+/** If you want to keep the old name for existing imports: */
+export const listInsurance = listInsuranceOptions;
 
 // GET /insurance/:id
 export const getInsurance = async (id: string): Promise<Insurance> => {
@@ -78,3 +84,5 @@ export const restoreInsurance = async (
     throw error.response?.data || { message: "Failed to restore insurance company" };
   }
 };
+
+

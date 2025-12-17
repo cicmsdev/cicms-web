@@ -2,6 +2,7 @@
 import { Bell, Settings, User, LogOut, Filter, Menu } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import { useRouter } from "next/navigation";
+import { useUnreadCount } from "@/hooks/useNotifications";
 
 type Props = {
   onOpenNav: () => void;
@@ -11,6 +12,8 @@ type Props = {
 export default function Header({ onOpenFilter, onOpenNav }: Props) {
   const { logout } = useAuth();
   const router = useRouter();
+  const { data } = useUnreadCount();
+  const unread = data?.count ?? 0;
 
   return (
     <header className="bg-[#0a2045] text-white p-4 flex items-center justify-between shadow">
@@ -34,7 +37,14 @@ export default function Header({ onOpenFilter, onOpenNav }: Props) {
           </button>
         )}
 
-        <button aria-label="Notifications"><Bell className="h-5 w-5" /></button>
+        <button aria-label="Notifications" className="relative">
+          <Bell className="h-5 w-5" />
+          {unread > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 text-xs rounded-full bg-red-500 text-white grid place-items-center">
+              {unread > 99 ? "99+" : unread}
+            </span>
+          )}
+        </button>
         <button aria-label="Settings"><Settings className="h-5 w-5" /></button>
         <button aria-label="Account"><User className="h-5 w-5" /></button>
         <button

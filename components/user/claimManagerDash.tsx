@@ -11,33 +11,30 @@ import Claims from "./claimManagerDashboard/Claims";
 import ClaimDetails from "./claimManagerDashboard/AdminClaimDetails";
 import MobileNavDrawer from "./claimManagerDashboard/MobileNavDrawer";
 import MobileFilterDrawer from "./claimManagerDashboard/MobileFilterDrawer";
+import AnalyticsPage from "./claimManagerDashboard/analytics";
 
 import type { QueryClaimsParams } from "@/lib/claims";
 import { UiClaim, UiFilters, toUiClaim, uiToStatus } from "@/lib/uiClaims";
-import { getManagerDashboard, listManagerClaims } from "../../services/claims/manager/manager.api";
+import {
+  getManagerDashboard,
+  listManagerClaims,
+} from "../../services/claims/manager/manager.api";
+import MessagesTab from "../chat/MessagesTab";
+import { useDmContacts } from "@/hooks/useDmContacts";
+import AdminNotificationsPanel from "../notifications/AdminNotificationsPanel";
+import UsersList from "./claimManagerDashboard/UsersList";
+import { useAdminNotificationsPaged } from "@/hooks/useAdminNotifications";
+import { useAuth } from "../../context/AuthContext";
 
-/* simple placeholders so tabs work now */
-function DocumentsPlaceholder() {
-  return (
-    <div className="bg-white rounded-xl shadow p-6">
-      <h2 className="text-lg font-semibold mb-2">Documents</h2>
-      <p className="text-sm text-gray-600">Coming soon.</p>
-    </div>
-  );
-}
-function NotificationsPlaceholder() {
-  return (
-    <div className="bg-white rounded-xl shadow p-6">
-      <h2 className="text-lg font-semibold mb-2">Notifications</h2>
-      <p className="text-sm text-gray-600">Coming soon.</p>
-    </div>
-  );
-}
 
-export default function ManagerDashboard()  {
+
+export default function ManagerDashboard() {
+  const { user } = useAuth();
+
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [messagesUnread, setMessagesUnread] = useState(0);
 
   const showFilters = activeTab === "claims";
 
@@ -88,7 +85,10 @@ export default function ManagerDashboard()  {
 
   // Transform API -> UI
   const apiClaims = claimsPage?.data ?? [];
-  const uiClaims: UiClaim[] = useMemo(() => apiClaims.map(toUiClaim), [apiClaims]);
+  const uiClaims: UiClaim[] = useMemo(
+    () => apiClaims.map(toUiClaim),
+    [apiClaims]
+  );
 
   const totalClaims = dashboard?.summary?.totalClaims ?? uiClaims.length;
 
@@ -102,7 +102,8 @@ export default function ManagerDashboard()  {
         filters.project === "" ||
         c.projectName.toLowerCase().includes(filters.project.toLowerCase());
       const fromDateMatch =
-        !filters.fromDate || new Date(c.incidentDate) >= new Date(filters.fromDate);
+        !filters.fromDate ||
+        new Date(c.incidentDate) >= new Date(filters.fromDate);
       const toDateMatch =
         !filters.toDate || new Date(c.incidentDate) <= new Date(filters.toDate);
       return statusMatch && projectMatch && fromDateMatch && toDateMatch;
@@ -111,6 +112,40 @@ export default function ManagerDashboard()  {
 
   // Selected claim for details
   const [selectedClaim, setSelectedClaim] = useState<UiClaim | null>(null);
+  // --- NEW: DM Contacts (with optional search) ---
+  const [dmSearch, setDmSearch] = useState("");
+  const { data: dmPeers = [], isLoading: dmLoading } = useDmContacts(
+    dmSearch,
+    50
+  );
+
+  // latest admin notifications (3 newest)
+    const { data: latestAdminNotifs, status: latestStatus } = useAdminNotificationsPaged({
+    page: 1,
+    pageSize: 3,
+    filters: { includeArchived: false, unreadOnly: false, sortDir: "desc" },
+  });
+
+  
+
+  // PDF export metadata
+  const exporterName =
+    (typeof window !== "undefined" && localStorage.getItem("auth_name")) ||
+    user?.name ||
+    "";
+
+  // Whatever your UI filters are (here: filters.fromDate/toDate)
+  const rangeText =
+    filters.fromDate && filters.toDate
+      ? `Range: ${filters.fromDate} → ${filters.toDate}`
+      : "Range: (no date filter)";
+
+  const buildPdfMeta = () => ({
+    exporterName,
+    rangeText,
+    extraNote: filters.project ? `Project filter: "${filters.project}"` : undefined,
+    logoUrl: "/logo.png", // optional if you have it
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -121,7 +156,11 @@ export default function ManagerDashboard()  {
       />
 
       {/* Navigation */}
-      <Navigation activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Navigation 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        messagesCount={messagesUnread}
+      />
 
       <div className="flex">
         {/* Desktop filters — only on Claims tab */}
@@ -152,19 +191,44 @@ export default function ManagerDashboard()  {
             <>
               {activeTab === "overview" && (
                 <Overview
-                  claims={uiClaims}         // unfiltered for overview
+                  claims={uiClaims} // unfiltered for overview
                   total={totalClaims}
                   onSelectClaim={setSelectedClaim}
+                  // pass  notifications + handler to open Notifications tab
+                  latestNotifications={latestAdminNotifs?.notifications ?? []}
+                  latestNotificationsLoading={latestStatus === "pending"}
+                  onOpenNotifications={() => setActiveTab("notifications")}
                 />
               )}
               {activeTab === "claims" && (
                 <Claims
-                  claims={filteredClaims}   // filtered for claims tab
+                  claims={filteredClaims} // filtered for claims tab
                   onSelectClaim={setSelectedClaim}
+                  onBuildPdfData={buildPdfMeta}
                 />
               )}
-              {activeTab === "documents" && <DocumentsPlaceholder />}
-              {activeTab === "notifications" && <NotificationsPlaceholder />}
+              {activeTab === "messages" && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    {dmLoading && (
+                      <span className="text-xs text-gray-500">
+                        Loading contacts…
+                      </span>
+                    )}
+                  </div>
+
+                  <MessagesTab
+                    claims={uiClaims}
+                    dmPeers={dmPeers}
+                    showSideSearch // ← enable search for claims/contacts
+                    onUnreadChange={setMessagesUnread}
+                  />
+                </div>
+              )}
+
+              {activeTab === "notifications" && <AdminNotificationsPanel />}
+              {activeTab === "analysis" && <AnalyticsPage />}
+              {activeTab === "user" && <UsersList />}
             </>
           )}
         </main>
@@ -185,6 +249,7 @@ export default function ManagerDashboard()  {
           onClose={() => setMobileFilterOpen(false)}
           filters={filters}
           onFilter={setFilters}
+          
         />
       )}
 

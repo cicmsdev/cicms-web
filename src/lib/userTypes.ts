@@ -6,13 +6,16 @@ export interface CreateUserDto {
   name: string;
   email: string;
   phoneNumber: string;
-  role_id: UUID;
+  role_id: string;                    
+  insurance_company_id?: string;      
+
   is_active?: boolean;
   is_default_password?: boolean;
   OTP_number?: string;
   OTP_life_time?: string;
   last_login?: string;
 }
+
 
 
 export type Role = {

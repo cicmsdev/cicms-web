@@ -1,18 +1,28 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CheckCircle, AlertCircle, FileText, X, Bell } from "lucide-react";
+import { CheckCircle, AlertCircle, FileText, X, Bell, LucideCreditCard } from "lucide-react";
 import type { UiClaim, UiStatus } from "@/lib/uiClaims";
 import { UI_STATUSES } from "@/lib/uiClaims";
+import type { NotificationDto } from "@/lib/notifications";              
+import { readableType, timeago } from "@/lib/notifications";  
 
 type Props = {
   claims: UiClaim[];
   /** overall total (unfiltered); falls back to claims.length if not provided */
   total?: number;
   onSelectClaim: (claim: UiClaim) => void;
+
+  // latest notifications
+  latestNotifications?: NotificationDto[];
+  latestNotificationsLoading?: boolean;
+  onOpenNotifications?: () => void;
 };
 
 const iconFor = (s: UiStatus) =>
+  s === "Payed" ? (
+    <LucideCreditCard />
+  ):
   s === "Approved" || s === "Resolved" ? (
     <CheckCircle />
   ) : s === "In Review" || s === "In Court" ? (
@@ -34,9 +44,29 @@ const colorFor = (s: UiStatus) =>
     ? "bg-purple-100 text-purple-600"
     : s === "Submitted"
     ? "bg-blue-100 text-blue-600"
+    : s === "Payed"
+    ? "bg-green-600 text-green-100"
     : "bg-red-100 text-red-600";
 
-export default function Overview({ claims, total, onSelectClaim }: Props) {
+// pick an icon for a notification type 
+const notifIcon = (t: NotificationDto["type"]) => {
+  switch (t) {
+    case "DM_MESSAGE":
+    case "CLAIM_MESSAGE": return <Bell className="h-4 w-4" />;
+    case "CLAIM_STATUS_CHANGED": return <AlertCircle className="h-4 w-4" />;
+    case "EVALUATOR_ASSIGNED": return <CheckCircle className="h-4 w-4" />;
+    case "DOCUMENT_ADDED": return <FileText className="h-4 w-4" />;
+    default: return <Bell className="h-4 w-4" />;
+  }
+};
+export default function Overview({
+  claims,
+  total,
+  onSelectClaim,
+  latestNotifications = [],                 
+  latestNotificationsLoading = false,
+  onOpenNotifications = () => {},
+}: Props) {
   const statusCounts = UI_STATUSES.map((status) => ({
     label: status,
     count: claims.filter((c) => c.status === status).length,
@@ -47,7 +77,7 @@ export default function Overview({ claims, total, onSelectClaim }: Props) {
   return (
     <div className="space-y-6">
       {/* Metrics row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-8 gap-4">
         {/* Total Claims (overall) */}
         <motion.div
           key="total"
@@ -109,23 +139,60 @@ export default function Overview({ claims, total, onSelectClaim }: Props) {
         </div>
       </div>
 
-      {/* Latest Notifications (placeholder) */}
+       {/* 🔔 Latest Notifications — real, newest 3, styled like “Latest Claims” */}
       <div className="bg-white rounded-xl shadow p-6">
-        <h2 className="text-lg font-semibold mb-4">Latest Notifications</h2>
-        <ul className="space-y-3 text-sm text-gray-700">
-          <li className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            Claim C-1012 was approved yesterday.
-          </li>
-          <li className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4" />
-            Claim C-1015 is under review.
-          </li>
-          <li className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            New document uploaded for Claim C-1017.
-          </li>
-        </ul>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Latest Notifications</h2>
+          <button
+            type="button"
+            onClick={onOpenNotifications}
+            className="text-sm text-blue-700 hover:underline"
+          >
+            View all
+          </button>
+        </div>
+
+        {latestNotificationsLoading ? (
+          <div className="text-sm text-gray-500">Loading notifications…</div>
+        ) : latestNotifications.length === 0 ? (
+          <div className="text-sm text-gray-500">No recent notifications.</div>
+        ) : (
+          <div className="divide-y">
+            {latestNotifications
+              .slice()
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+              .slice(0, 3)
+              .map((n: NotificationDto) => (
+                <div
+                  key={n.id}
+                  className="py-3 flex justify-between items-center cursor-pointer hover:bg-gray-50 rounded-lg px-2"
+                  onClick={onOpenNotifications}
+                  title={n.title || readableType(n.type)}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="mt-1">{notifIcon(n.type)}</div>
+                    <div>
+                      <p className="font-medium text-gray-800">
+                        {n.title || readableType(n.type)}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {timeago(n.createdAt)}
+                        {n.claim?.ClaimTitle ? ` • ${n.claim.ClaimTitle}` : ""}
+                      </p>
+                      {n.body && (
+                        <p className="text-sm text-gray-600 mt-0.5 line-clamp-2">
+                          {n.body}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-xs text-gray-400 uppercase">
+                    {n.type.replace(/_/g, " ")}
+                  </span>
+                </div>
+              ))}
+          </div>
+        )}
       </div>
     </div>
   );

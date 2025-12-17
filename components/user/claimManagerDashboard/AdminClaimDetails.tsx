@@ -161,6 +161,10 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
   const evaluatorEmail = fc?.evaluator?.email ?? "";
   const evaluatorPhone = fc?.evaluator?.phoneNumber ?? "";
 
+  const submitterName = fc?.submittedBy?.name ?? "";
+  const submitterEmail = fc?.submittedBy?.email ?? "";
+  const submitterPhone = fc?.submittedBy?.phoneNumber ?? "";
+
   const companyName = fc?.company?.name ?? "";
   const companyEmail = fc?.company?.email ?? "";
   const representatives = Array.isArray(fc?.company?.representatives)
@@ -453,6 +457,49 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                     </div>
                   </div>
                 </div>
+
+                {/* Submitter (Contractor) */}
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-slate-500 min-w-[92px]">
+                                      Submitted by:
+                                    </span>
+                                    <span className="inline-flex items-center gap-2 font-medium">
+                                      <User size={14} className="text-slate-500" />
+                                      {submitterName || "—"}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 pl-6 space-y-1">
+                                    <div>
+                                      <span className="text-slate-500 mr-2">Email:</span>
+                                      {submitterEmail ? (
+                                        <a
+                                          href={`mailto:${submitterEmail}`}
+                                          className="inline-flex items-center gap-2 hover:underline break-all"
+                                        >
+                                          <Mail size={14} className="text-slate-500" />
+                                          {submitterEmail}
+                                        </a>
+                                      ) : (
+                                        <span className="text-slate-500">—</span>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <span className="text-slate-500 mr-2">Phone:</span>
+                                      {submitterPhone ? (
+                                        <a
+                                          href={`tel:${submitterPhone}`}
+                                          className="inline-flex items-center gap-2 hover:underline"
+                                        >
+                                          <Phone size={14} className="text-slate-500" />
+                                          {submitterPhone}
+                                        </a>
+                                      ) : (
+                                        <span className="text-slate-500">—</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
               </div>
             )}
 
@@ -462,119 +509,139 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                 {!((fc?.documents ?? []).length > 0) && (
                   <p className="text-sm text-slate-500">No documents.</p>
                 )}
-                {(fc?.documents ?? []).map((rawDoc: any, idx: number) => {
-                  const docId = rawDoc?.documentId ?? rawDoc?.id ?? null;
-                  const filePath = rawDoc?.filePath ?? "";
-                  const nameFromPath =
-                    typeof filePath === "string" && filePath.length
-                      ? filePath.split(/[\\/]/).pop()
-                      : "";
-                  const displayName =
-                    rawDoc?.name ||
-                    rawDoc?.filename ||
-                    nameFromPath ||
-                    (docId
-                      ? `Document ${String(docId).slice(0, 6)}`
-                      : `Document ${idx + 1}`);
-                  const createdAt = rawDoc?.createdAt || rawDoc?.uploadDate;
-                  const createdAtStr = createdAt
-                    ? new Date(createdAt).toLocaleString()
-                    : "";
-                  const downloadUrl = docId
-                    ? `${API_BASE_URL}/documents/${docId}/download`
-                    : rawDoc?.url || null;
-                  const docType: string =
-                    rawDoc?.documentType ?? rawDoc?.type ?? "";
-                  const typeLabel = humanize(docType);
-                  const typeClass =
-                    TYPE_COLORS[docType] ?? "bg-slate-100 text-slate-700";
-                  const uploader = rawDoc?.uploader;
-                  const uploaderName = uploader?.name ?? "";
-                  const uploaderEmail = uploader?.email ?? "";
-                  const uploaderPhone = uploader?.phoneNumber ?? "";
 
-                  return (
-                    <div
-                      key={docId ?? idx}
-                      className="border rounded-lg p-3 hover:shadow-sm transition"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <FileText
-                              size={16}
-                              className="shrink-0 text-slate-500"
-                            />
-                            <p className="text-sm font-semibold truncate">
-                              {displayName}
-                            </p>
-                          </div>
-                          {createdAtStr && (
-                            <p className="text-xs text-slate-500 mt-1">
-                              {createdAtStr}
-                            </p>
-                          )}
-                          {typeLabel && (
-                            <span
-                              className={`inline-block mt-2 text-[10px] px-2 py-1 rounded-full uppercase tracking-wide ${typeClass}`}
-                            >
-                              {typeLabel}
-                            </span>
-                          )}
-                          {(uploaderName || uploaderEmail || uploaderPhone) && (
-                            <div className="mt-2 text-xs text-slate-600 space-y-1">
-                              <div className="flex items-center gap-1">
-                                <span className="text-slate-500">
-                                  Uploaded by:
-                                </span>
-                                <span className="inline-flex items-center gap-1 font-medium">
-                                  <User size={12} className="text-slate-500" />
-                                  {uploaderName || "—"}
-                                </span>
+                {(fc?.documents ?? []).length > 0 && (
+                  <div className="max-h-96 overflow-y-auto pr-2 space-y-3 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+                    {(fc?.documents ?? []).map((rawDoc: any, idx: number) => {
+                      const docId = rawDoc?.documentId ?? rawDoc?.id ?? null;
+                      const filePath = rawDoc?.filePath ?? "";
+                      const nameFromPath =
+                        typeof filePath === "string" && filePath.length
+                          ? filePath.split(/[\\/]/).pop()
+                          : "";
+                      const displayName =
+                        rawDoc?.name ||
+                        rawDoc?.filename ||
+                        nameFromPath ||
+                        (docId
+                          ? `Document ${String(docId).slice(0, 6)}`
+                          : `Document ${idx + 1}`);
+
+                      const createdAt = rawDoc?.createdAt || rawDoc?.uploadDate;
+                      const createdAtStr = createdAt
+                        ? new Date(createdAt).toLocaleString()
+                        : "";
+
+                      const downloadUrl = docId
+                        ? `${API_BASE_URL}/documents/${docId}/download`
+                        : rawDoc?.url || null;
+
+                      const docType: string =
+                        rawDoc?.documentType ?? rawDoc?.type ?? "";
+                      const typeLabel = humanize(docType);
+                      const typeClass =
+                        TYPE_COLORS[docType] ?? "bg-slate-100 text-slate-700";
+
+                      const uploader = rawDoc?.uploader;
+                      const uploaderName = uploader?.name ?? "";
+                      const uploaderEmail = uploader?.email ?? "";
+                      const uploaderPhone = uploader?.phoneNumber ?? "";
+
+                      return (
+                        <div
+                          key={docId ?? idx}
+                          className="border rounded-lg p-3 hover:shadow-sm transition"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <FileText
+                                  size={16}
+                                  className="shrink-0 text-slate-500"
+                                />
+                                <p className="text-sm font-semibold truncate">
+                                  {displayName}
+                                </p>
                               </div>
-                              <div className="flex flex-wrap items-center gap-3 pl-4">
-                                {uploaderEmail && (
-                                  <a
-                                    href={`mailto:${uploaderEmail}`}
-                                    className="inline-flex items-center gap-1 hover:underline break-all"
-                                  >
-                                    <Mail size={12} /> {uploaderEmail}
-                                  </a>
-                                )}
-                                {uploaderPhone && (
-                                  <a
-                                    href={`tel:${uploaderPhone}`}
-                                    className="inline-flex items-center gap-1 hover:underline"
-                                  >
-                                    <Phone size={12} /> {uploaderPhone}
-                                  </a>
-                                )}
-                              </div>
+
+                              {createdAtStr && (
+                                <p className="text-xs text-slate-500 mt-1">
+                                  {createdAtStr}
+                                </p>
+                              )}
+
+                              {typeLabel && (
+                                <span
+                                  className={`inline-block mt-2 text-[10px] px-2 py-1 rounded-full uppercase tracking-wide ${typeClass}`}
+                                >
+                                  {typeLabel}
+                                </span>
+                              )}
+
+                              {(uploaderName ||
+                                uploaderEmail ||
+                                uploaderPhone) && (
+                                <div className="mt-2 text-xs text-slate-600 space-y-1">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-slate-500">
+                                      Uploaded by:
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 font-medium">
+                                      <User
+                                        size={12}
+                                        className="text-slate-500"
+                                      />
+                                      {uploaderName || "—"}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-3 pl-4">
+                                    {uploaderEmail && (
+                                      <a
+                                        href={`mailto:${uploaderEmail}`}
+                                        className="inline-flex items-center gap-1 hover:underline break-all"
+                                      >
+                                        <Mail size={12} />
+                                        {uploaderEmail}
+                                      </a>
+                                    )}
+                                    {uploaderPhone && (
+                                      <a
+                                        href={`tel:${uploaderPhone}`}
+                                        className="inline-flex items-center gap-1 hover:underline"
+                                      >
+                                        <Phone size={12} />
+                                        {uploaderPhone}
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          )}
+
+                            <div className="shrink-0">
+                              {downloadUrl ? (
+                                <a
+                                  href={downloadUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border bg-white hover:bg-slate-50 text-[#0a2045] border-slate-200"
+                                  title="View / Download"
+                                >
+                                  <Download size={14} />
+                                  Download
+                                </a>
+                              ) : (
+                                <span className="text-xs text-slate-400">
+                                  No link
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="shrink-0">
-                          {downloadUrl ? (
-                            <a
-                              href={downloadUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border bg-white hover:bg-slate-50 text-[#0a2045] border-slate-200"
-                              title="View / Download"
-                            >
-                              <Download size={14} />
-                              Download
-                            </a>
-                          ) : (
-                            <span className="text-xs text-slate-400">
-                              No link
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -584,84 +651,96 @@ export default function ClaimDetails({ selectedClaim, onClose }: Props) {
                 {activities.length === 0 && (
                   <p className="text-sm text-slate-500">No activity yet.</p>
                 )}
-                {activities.map((a: any, idx: number) => {
-                  const key = a.id ?? a.activityId ?? idx;
-                  const when = a.createdAt ?? a.timestamp ?? a.date ?? a.time;
-                  const whenStr = when ? new Date(when).toLocaleString() : "";
-                  const actorName =
-                    a.performedBy?.name ??
-                    a.actor?.name ??
-                    a.user?.name ??
-                    a.actorName ??
-                    a.userName ??
-                    a.performedBy?.email ??
-                    a.actorEmail ??
-                    a.userEmail ??
-                    "System";
-                  const action = a.action ?? a.type ?? a.event ?? "Updated";
-                  const fromStatus = a.fromStatus ?? a.oldStatus;
-                  const toStatus = a.toStatus ?? a.newStatus;
-                  const reasonText = a.reason ?? "";
 
-                  return (
-                    <div
-                      key={key}
-                      className="border rounded-lg p-3 hover:shadow-sm transition"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <User
-                              size={16}
-                              className="text-slate-500 shrink-0"
-                            />
-                            <p className="text-sm font-medium truncate">
-                              {actorName}
-                            </p>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-1">
-                            {whenStr}
-                          </p>
-                          <div className="mt-2 text-sm">
-                            <span className="font-medium">{action}</span>
-                            {(fromStatus || toStatus) && (
-                              <span className="ml-1 inline-flex items-center gap-1">
-                                {fromStatus ? (
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded ${statusBadgeClass(
-                                      fromStatus
-                                    )}`}
-                                  >
-                                    {uiStatusLabel(fromStatus)}
+                {/* Scrollable container */}
+                {activities.length > 0 && (
+                  <div className="max-h-96 overflow-y-auto pr-2 space-y-3 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+                    {activities.map((a: any, idx: number) => {
+                      const key = a.id ?? a.activityId ?? idx;
+                      const when =
+                        a.createdAt ?? a.timestamp ?? a.date ?? a.time;
+                      const whenStr = when
+                        ? new Date(when).toLocaleString()
+                        : "";
+                      const actorName =
+                        a.performedBy?.name ??
+                        a.actor?.name ??
+                        a.user?.name ??
+                        a.actorName ??
+                        a.userName ??
+                        a.performedBy?.email ??
+                        a.actorEmail ??
+                        a.userEmail ??
+                        "System";
+                      const action = a.action ?? a.type ?? a.event ?? "Updated";
+                      const fromStatus = a.fromStatus ?? a.oldStatus;
+                      const toStatus = a.toStatus ?? a.newStatus;
+                      const reasonText = a.reason ?? "";
+
+                      return (
+                        <div
+                          key={key}
+                          className="border rounded-lg p-3 hover:shadow-sm transition"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <User
+                                  size={16}
+                                  className="text-slate-500 shrink-0"
+                                />
+                                <p className="text-sm font-medium truncate">
+                                  {actorName}
+                                </p>
+                              </div>
+
+                              <p className="text-xs text-slate-500 mt-1">
+                                {whenStr}
+                              </p>
+
+                              <div className="mt-2 text-sm">
+                                <span className="font-medium">{action}</span>
+                                {(fromStatus || toStatus) && (
+                                  <span className="ml-1 inline-flex items-center gap-1">
+                                    {fromStatus ? (
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded ${statusBadgeClass(
+                                          fromStatus
+                                        )}`}
+                                      >
+                                        {uiStatusLabel(fromStatus)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-500">—</span>
+                                    )}
+                                    <span className="mx-1">→</span>
+                                    {toStatus ? (
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded ${statusBadgeClass(
+                                          toStatus
+                                        )}`}
+                                      >
+                                        {uiStatusLabel(toStatus)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-500">—</span>
+                                    )}
                                   </span>
-                                ) : (
-                                  <span className="text-slate-500">—</span>
                                 )}
-                                <span className="mx-1">→</span>
-                                {toStatus ? (
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded ${statusBadgeClass(
-                                      toStatus
-                                    )}`}
-                                  >
-                                    {uiStatusLabel(toStatus)}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-500">—</span>
-                                )}
-                              </span>
-                            )}
+                              </div>
+
+                              {reasonText && (
+                                <p className="text-xs text-slate-600 mt-2 whitespace-pre-wrap">
+                                  Reason: {reasonText}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                          {reasonText && (
-                            <p className="text-xs text-slate-600 mt-2 whitespace-pre-wrap">
-                              Reason: {reasonText}
-                            </p>
-                          )}
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 

@@ -1,6 +1,8 @@
 "use client";
+
+import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Home, FileText, Folder, Bell } from "lucide-react";
+import { X, Home, FileText, Folder, Bell, MessageCircleIcon } from "lucide-react";
 import type { Tab } from "./Navigation";
 
 type Props = {
@@ -10,10 +12,10 @@ type Props = {
   setActiveTab: React.Dispatch<React.SetStateAction<Tab>>;
 };
 
-const navItems: { id: Tab; label: string; icon: any }[] = [
+const navItems: { id: Tab; label: string; icon: React.ComponentType<any> }[] = [
   { id: "overview", label: "Overview", icon: Home },
   { id: "claims", label: "Claims", icon: FileText },
-  { id: "documents", label: "Documents", icon: Folder },
+  { id: "messages", label: "Messages", icon: MessageCircleIcon },
   { id: "notifications", label: "Notifications", icon: Bell },
 ];
 
@@ -39,12 +41,13 @@ export default function MobileNavDrawer({
               <X className="h-5 w-5 text-gray-600" />
             </button>
           </div>
+
           <div className="flex flex-col p-4 space-y-4">
             {navItems.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => {
-                  setActiveTab(tab.id);
+                  setActiveTab(tab.id); // tab.id is Tab, matches setter type
                   onClose();
                 }}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-left ${

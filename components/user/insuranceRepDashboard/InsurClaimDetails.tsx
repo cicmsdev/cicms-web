@@ -28,7 +28,8 @@ import {
 
 /* ------------------------- helpers / constants ------------------------- */
 
-const humanize = (s?: string) => (typeof s === "string" ? s.replaceAll("_", " ") : "");
+const humanize = (s?: string) =>
+  typeof s === "string" ? s.replaceAll("_", " ") : "";
 
 const TABS = ["overview", "documents", "activity", "action"] as const;
 type DetailsTab = (typeof TABS)[number];
@@ -38,6 +39,7 @@ const TYPE_COLORS: Record<string, string> = {
   POLICE_REPORT: "bg-indigo-100 text-indigo-800",
   SITE_INSPECTION_REPORT: "bg-teal-100 text-teal-800",
   LAND_OWNERSHIP_PROOF: "bg-emerald-100 text-emerald-800",
+  PAYMENT_PROOF: "bg-amber-100 text-amber-800",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -47,9 +49,9 @@ const STATUS_COLORS: Record<string, string> = {
   Resolved: "bg-emerald-100 text-emerald-700",
   "In Court": "bg-purple-100 text-purple-700",
   Rejected: "bg-red-100 text-red-700",
+  PAYED: "bg-green-100 text-green-700",
 };
 
-// Map API enums -> UI labels used by STATUS_COLORS
 const API_TO_UI_STATUS: Record<string, keyof typeof STATUS_COLORS> = {
   SUBMITTED: "Submitted",
   IN_EVALUATION: "In Review",
@@ -57,23 +59,17 @@ const API_TO_UI_STATUS: Record<string, keyof typeof STATUS_COLORS> = {
   REJECTED: "Rejected",
   RESOLVED: "Resolved",
   IN_COURT: "In Court",
+  PAYED: "PAYED",
 };
 
-// Turn any raw status (enum or UI label) into a UI label key for STATUS_COLORS
 function toUiStatus(raw?: string): keyof typeof STATUS_COLORS | undefined {
   if (!raw) return undefined;
-  // If it's already a UI label (e.g., "In Review")
   if (raw in STATUS_COLORS) return raw as keyof typeof STATUS_COLORS;
-
-  // Try API enum style: SUBMITTED, IN_EVALUATION, etc.
   const enumish = raw.toUpperCase().replace(/\s+/g, "_");
   if (enumish in API_TO_UI_STATUS) return API_TO_UI_STATUS[enumish];
-
-  // Fallback: Title-Case the humanized string and see if it matches
   const guess = humanize(raw)
     .toLowerCase()
     .replace(/\b\w/g, (m) => m.toUpperCase()) as keyof typeof STATUS_COLORS;
-
   return guess in STATUS_COLORS ? guess : undefined;
 }
 
@@ -89,14 +85,16 @@ function statusBadgeClass(raw?: string) {
 type Props = {
   selectedClaim: UiClaim | null;
   onClose: () => void;
-  /** Optional: if you want to navigate to another page to edit claim meta */
   onUpdate?: (claimId: string) => void;
 };
 
-export default function ClaimDetails({ selectedClaim, onClose, onUpdate }: Props) {
+export default function ClaimDetails({
+  selectedClaim,
+  onClose,
+  onUpdate,
+}: Props) {
   const router = useRouter();
   const qc = useQueryClient();
-
   const [detailsTab, setDetailsTab] = useState<DetailsTab>("overview");
   const [actionStatus, setActionStatus] = useState<ClaimStatus | null>(null);
   const [reason, setReason] = useState("");
@@ -119,25 +117,26 @@ export default function ClaimDetails({ selectedClaim, onClose, onUpdate }: Props
   const fc = fullClaim as any;
 
   /* ------------------------------- computed UI ----------------------------- */
-  const title = fc?.ClaimTitle ?? selectedClaim?.projectName ?? "Untitled claim";
+  const title =
+    fc?.ClaimTitle ?? selectedClaim?.projectName ?? "Untitled claim";
 
-  // Prefer backend status; fall back to selectedClaim status; render as UI label
   const headerStatusLabel =
-    uiStatusLabel(fc?.status) || uiStatusLabel(selectedClaim?.status) || "Submitted";
+    uiStatusLabel(fc?.status) ||
+    uiStatusLabel(selectedClaim?.status) ||
+    "Submitted";
 
   const date =
     (fc?.submissionDate && new Date(fc.submissionDate).toLocaleDateString()) ||
-    (selectedClaim?.incidentDate && new Date(selectedClaim.incidentDate).toLocaleDateString()) ||
+    (selectedClaim?.incidentDate &&
+      new Date(selectedClaim.incidentDate).toLocaleDateString()) ||
     "";
 
-  // Documents count: prefer server details if present; fallback to list count (safe)
   const docCount = Array.isArray(fc?.documents)
     ? fc.documents.length
     : typeof selectedClaim?.documents === "number"
     ? selectedClaim.documents
     : 0;
 
-  // Contacts, company, reps
   const evaluatorName = fc?.evaluator?.name ?? "";
   const evaluatorEmail = fc?.evaluator?.email ?? "";
   const evaluatorPhone = fc?.evaluator?.phoneNumber ?? "";
@@ -148,9 +147,10 @@ export default function ClaimDetails({ selectedClaim, onClose, onUpdate }: Props
 
   const companyName = fc?.company?.name ?? "";
   const companyEmail = fc?.company?.email ?? "";
-  const representatives = Array.isArray(fc?.company?.representatives) ? fc.company.representatives : [];
+  const representatives = Array.isArray(fc?.company?.representatives)
+    ? fc.company.representatives
+    : [];
 
-  // Activities: accept various backend shapes
   const activities: any[] = useMemo(() => {
     if (Array.isArray(fc?.activities)) return fc.activities;
     if (Array.isArray(fc?.activityLogs)) return fc.activityLogs;
@@ -158,38 +158,36 @@ export default function ClaimDetails({ selectedClaim, onClose, onUpdate }: Props
     return [];
   }, [fc]);
 
+  /* --------------------------- action states --------------------------- */
+  const statusIsLocked = fc?.status === ClaimStatus.PAYED;
+  const paymentProofExists = (fc?.documents ?? []).some(
+    (doc: any) =>
+      doc.documentType === "PAYMENT_PROOF" || doc.type === "PAYMENT_PROOF"
+  );
+  const canMarkPayed = !statusIsLocked && paymentProofExists;
+
   /* --------------------------- status update mutation ---------------------- */
-  /* --------------------------- status update mutation ---------------------- */
-const { mutate: doUpdateStatus, isPending: saving } = useMutation({
-  mutationFn: async () => {
-    if (!claimId || !actionStatus) throw new Error("Select a status first.");
+  const { mutate: doUpdateStatus, isPending: saving } = useMutation({
+    mutationFn: async () => {
+      if (!claimId || !actionStatus) throw new Error("Select a status first.");
+      return await updateInsuranceClaimStatus(claimId, {
+        status: actionStatus,
+        reason: reason?.trim() || undefined,
+      });
+    },
+    onMutate: async () => {
+      if (!claimId || !actionStatus) return;
+      await qc.cancelQueries({ queryKey: ["claimDetails", claimId] });
+      await qc.cancelQueries({ queryKey: ["insurerClaims"] });
+      await qc.cancelQueries({ queryKey: ["insurerDashboard"] });
 
-    return await updateInsuranceClaimStatus(claimId, {
-      status: actionStatus,
-      reason: reason?.trim() || undefined,
-    });
-  },
+      const prevDetails = qc.getQueryData<any>(["claimDetails", claimId]);
+      const nowIso = new Date().toISOString();
 
-  // ✅ OPTIMISTIC UPDATE
-  onMutate: async () => {
-    if (!claimId || !actionStatus) return;
-
-    // 1) stop background refetches that could overwrite our optimistic data
-    await qc.cancelQueries({ queryKey: ["claimDetails", claimId] });
-    await qc.cancelQueries({ queryKey: ["insurerClaims"] });
-    await qc.cancelQueries({ queryKey: ["insurerDashboard"] });
-
-    // 2) snapshot previous details cache for rollback
-    const prevDetails = qc.getQueryData<any>(["claimDetails", claimId]);
-
-    // 3) craft optimistic details (status + activity prepend)
-    const nowIso = new Date().toISOString();
-    const optimisticDetails =
-      prevDetails
+      const optimisticDetails = prevDetails
         ? {
             ...prevDetails,
             status: actionStatus,
-            // support any of your backend shapes for activity arrays
             activities: [
               {
                 id: `tmp-${nowIso}`,
@@ -200,34 +198,18 @@ const { mutate: doUpdateStatus, isPending: saving } = useMutation({
                 createdAt: nowIso,
                 performedBy: { name: "You" },
               },
-              ...(Array.isArray(prevDetails.activities) ? prevDetails.activities : []),
+              ...(Array.isArray(prevDetails.activities)
+                ? prevDetails.activities
+                : []),
             ],
-            activityLogs: Array.isArray(prevDetails.activityLogs)
-              ? [
-                  {
-                    id: `tmp-${nowIso}`,
-                    action: "Status Updated (optimistic)",
-                    fromStatus: prevDetails.status,
-                    toStatus: actionStatus,
-                    reason: reason?.trim() || undefined,
-                    createdAt: nowIso,
-                    performedBy: { name: "You" },
-                  },
-                  ...prevDetails.activityLogs,
-                ]
-              : prevDetails.activityLogs,
           }
         : prevDetails;
 
-    // 4) write optimistic details
-    if (optimisticDetails) {
-      qc.setQueryData(["claimDetails", claimId], optimisticDetails);
-    }
+      if (optimisticDetails) {
+        qc.setQueryData(["claimDetails", claimId], optimisticDetails);
+      }
 
-    // 5) update any cached insurer claim lists so tables reflect the new status
-    qc.setQueriesData(
-      { queryKey: ["insurerClaims"] },
-      (old: any) => {
+      qc.setQueriesData({ queryKey: ["insurerClaims"] }, (old: any) => {
         if (!old?.data) return old;
         return {
           ...old,
@@ -237,51 +219,38 @@ const { mutate: doUpdateStatus, isPending: saving } = useMutation({
               : c
           ),
         };
+      });
+
+      return { prevDetails };
+    },
+    onError: (e: unknown, _vars, ctx) => {
+      if (ctx?.prevDetails) {
+        qc.setQueryData(["claimDetails", claimId], ctx.prevDetails);
       }
-    );
+      const msg =
+        e instanceof Error
+          ? e.message
+          : typeof e === "string"
+          ? e
+          : "Failed to update status";
+      toast.error(msg);
+    },
+    onSuccess: (result) => {
+      toast.success(result?.message || "Status updated");
+      setReason("");
+      setActionStatus(null);
+      setDetailsTab("activity");
+    },
+    onSettled: async () => {
+      await Promise.allSettled([
+        qc.invalidateQueries({ queryKey: ["claimDetails", claimId] }),
+        qc.invalidateQueries({ queryKey: ["insurerClaims"] }),
+        qc.invalidateQueries({ queryKey: ["insurerDashboard"] }),
+      ]);
+    },
+  });
 
-    // 6) return context for rollback
-    return { prevDetails };
-  },
-
-  // 🧯 ROLLBACK on error + nice message
-  onError: (e: unknown, _vars, ctx) => {
-    if (ctx?.prevDetails) {
-      qc.setQueryData(["claimDetails", claimId], ctx.prevDetails);
-    }
-
-    const msg =
-      e instanceof Error
-        ? e.message
-        : typeof e === "string"
-        ? e
-        : "Failed to update status";
-
-    toast.error(msg);
-  },
-
-  // ✅ SUCCESS: light UI cleanup
-  onSuccess: (result) => {
-    toast.success(result?.message || "Status updated");
-    setReason("");
-    setActionStatus(null);
-    setDetailsTab("activity");
-    // NOTE: avoid redirect so users see the change live in the drawer
-    // router.replace("/insuranseRepDash") // ← remove this for true realtime UX
-  },
-
-  // 🔄 SETTLED: reconcile with server
-  onSettled: async () => {
-    await Promise.allSettled([
-      qc.invalidateQueries({ queryKey: ["claimDetails", claimId] }),
-      qc.invalidateQueries({ queryKey: ["insurerClaims"] }),
-      qc.invalidateQueries({ queryKey: ["insurerDashboard"] }),
-    ]);
-  },
-});
-
-
-  /* -------------------------------- handlers -------------------------------- */
+  /* --------------------------- handlers --------------------------- */
   const copyId = async () => {
     if (!claimId) return;
     try {
@@ -292,13 +261,17 @@ const { mutate: doUpdateStatus, isPending: saving } = useMutation({
     }
   };
 
-  // For insurer flows: use the pencil as a shortcut to the Action tab.
   const handlePencil = () => {
-    if (onUpdate && claimId) return onUpdate(claimId);
-    setDetailsTab("action");
+    
+    if (!claimId) return;
+    console.log(`claim when clicked: ${claimId}`);
+
+    // Navigate to the evaluator-specific page
+    router.push(`/paymentPage/${claimId}`);
+  
   };
 
-  /* --------------------------------- render --------------------------------- */
+  /* --------------------------- render --------------------------- */
   return (
     <AnimatePresence>
       {selectedClaim && (
@@ -413,7 +386,9 @@ const { mutate: doUpdateStatus, isPending: saving } = useMutation({
                 <div>
                   <div className="flex items-center gap-2">
                     <Building2 size={16} className="text-slate-500" />
-                    <span className="text-slate-500 min-w-[92px]">Company:</span>
+                    <span className="text-slate-500 min-w-[92px]">
+                      Company:
+                    </span>
                     <span className="font-medium">{companyName || "—"}</span>
                   </div>
                   <div className="mt-1 pl-6">
@@ -437,7 +412,9 @@ const { mutate: doUpdateStatus, isPending: saving } = useMutation({
                   <div className="flex items-center gap-2">
                     <Users size={16} className="text-slate-500" />
                     <span className="text-slate-500 min-w-[92px]">Reps:</span>
-                    <span className="font-medium">{representatives.length || 0}</span>
+                    <span className="font-medium">
+                      {representatives.length || 0}
+                    </span>
                   </div>
                   {representatives.length > 0 && (
                     <ul className="mt-1 space-y-1 pl-6">
@@ -477,7 +454,9 @@ const { mutate: doUpdateStatus, isPending: saving } = useMutation({
                 {/* Evaluator */}
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-500 min-w-[92px]">Evaluator:</span>
+                    <span className="text-slate-500 min-w-[92px]">
+                      Evaluator:
+                    </span>
                     <span className="inline-flex items-center gap-2 font-medium">
                       <User size={14} className="text-slate-500" />
                       {evaluatorName || "Unassigned"}
@@ -518,7 +497,9 @@ const { mutate: doUpdateStatus, isPending: saving } = useMutation({
                 {/* Submitter (Contractor) */}
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-500 min-w-[92px]">Submitted by:</span>
+                    <span className="text-slate-500 min-w-[92px]">
+                      Submitted by:
+                    </span>
                     <span className="inline-flex items-center gap-2 font-medium">
                       <User size={14} className="text-slate-500" />
                       {submitterName || "—"}
@@ -565,109 +546,138 @@ const { mutate: doUpdateStatus, isPending: saving } = useMutation({
                   <p className="text-sm text-slate-500">No documents.</p>
                 )}
 
-                {(fc?.documents ?? []).map((rawDoc: any, idx: number) => {
-                  const docId = rawDoc?.documentId ?? rawDoc?.id ?? null;
-                  const filePath = rawDoc?.filePath ?? "";
-                  const nameFromPath =
-                    typeof filePath === "string" && filePath.length
-                      ? filePath.split(/[\\/]/).pop()
-                      : "";
-                  const displayName =
-                    rawDoc?.name ||
-                    rawDoc?.filename ||
-                    nameFromPath ||
-                    (docId ? `Document ${String(docId).slice(0, 6)}` : `Document ${idx + 1}`);
+                {(fc?.documents ?? []).length > 0 && (
+                  <div className="max-h-96 overflow-y-auto pr-2 space-y-3 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+                    {(fc?.documents ?? []).map((rawDoc: any, idx: number) => {
+                      const docId = rawDoc?.documentId ?? rawDoc?.id ?? null;
+                      const filePath = rawDoc?.filePath ?? "";
+                      const nameFromPath =
+                        typeof filePath === "string" && filePath.length
+                          ? filePath.split(/[\\/]/).pop()
+                          : "";
+                      const displayName =
+                        rawDoc?.name ||
+                        rawDoc?.filename ||
+                        nameFromPath ||
+                        (docId
+                          ? `Document ${String(docId).slice(0, 6)}`
+                          : `Document ${idx + 1}`);
 
-                  const createdAt = rawDoc?.createdAt || rawDoc?.uploadDate;
-                  const createdAtStr = createdAt ? new Date(createdAt).toLocaleString() : "";
+                      const createdAt = rawDoc?.createdAt || rawDoc?.uploadDate;
+                      const createdAtStr = createdAt
+                        ? new Date(createdAt).toLocaleString()
+                        : "";
 
-                  const downloadUrl = docId
-                    ? `${API_BASE_URL}/documents/${docId}/download`
-                    : rawDoc?.url || null;
+                      const downloadUrl = docId
+                        ? `${API_BASE_URL}/documents/${docId}/download`
+                        : rawDoc?.url || null;
 
-                  const docType: string = rawDoc?.documentType ?? rawDoc?.type ?? "";
-                  const typeLabel = humanize(docType);
-                  const typeClass = TYPE_COLORS[docType] ?? "bg-slate-100 text-slate-700";
+                      const docType: string =
+                        rawDoc?.documentType ?? rawDoc?.type ?? "";
+                      const typeLabel = humanize(docType);
+                      const typeClass =
+                        TYPE_COLORS[docType] ?? "bg-slate-100 text-slate-700";
 
-                  const uploader = rawDoc?.uploader;
-                  const uploaderName = uploader?.name ?? "";
-                  const uploaderEmail = uploader?.email ?? "";
-                  const uploaderPhone = uploader?.phoneNumber ?? "";
+                      const uploader = rawDoc?.uploader;
+                      const uploaderName = uploader?.name ?? "";
+                      const uploaderEmail = uploader?.email ?? "";
+                      const uploaderPhone = uploader?.phoneNumber ?? "";
 
-                  return (
-                    <div key={docId ?? idx} className="border rounded-lg p-3 hover:shadow-sm transition">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <FileText size={16} className="shrink-0 text-slate-500" />
-                            <p className="text-sm font-semibold truncate">{displayName}</p>
-                          </div>
+                      return (
+                        <div
+                          key={docId ?? idx}
+                          className="border rounded-lg p-3 hover:shadow-sm transition"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <FileText
+                                  size={16}
+                                  className="shrink-0 text-slate-500"
+                                />
+                                <p className="text-sm font-semibold truncate">
+                                  {displayName}
+                                </p>
+                              </div>
 
-                          {createdAtStr && (
-                            <p className="text-xs text-slate-500 mt-1">{createdAtStr}</p>
-                          )}
+                              {createdAtStr && (
+                                <p className="text-xs text-slate-500 mt-1">
+                                  {createdAtStr}
+                                </p>
+                              )}
 
-                          {typeLabel && (
-                            <span
-                              className={`inline-block mt-2 text-[10px] px-2 py-1 rounded-full uppercase tracking-wide ${typeClass}`}
-                            >
-                              {typeLabel}
-                            </span>
-                          )}
-
-                          {(uploaderName || uploaderEmail || uploaderPhone) && (
-                            <div className="mt-2 text-xs text-slate-600 space-y-1">
-                              <div className="flex items-center gap-1">
-                                <span className="text-slate-500">Uploaded by:</span>
-                                <span className="inline-flex items-center gap-1 font-medium">
-                                  <User size={12} className="text-slate-500" />
-                                  {uploaderName || "—"}
+                              {typeLabel && (
+                                <span
+                                  className={`inline-block mt-2 text-[10px] px-2 py-1 rounded-full uppercase tracking-wide ${typeClass}`}
+                                >
+                                  {typeLabel}
                                 </span>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-3 pl-4">
-                                {uploaderEmail && (
-                                  <a
-                                    href={`mailto:${uploaderEmail}`}
-                                    className="inline-flex items-center gap-1 hover:underline break-all"
-                                  >
-                                    <Mail size={12} />
-                                    {uploaderEmail}
-                                  </a>
-                                )}
-                                {uploaderPhone && (
-                                  <a
-                                    href={`tel:${uploaderPhone}`}
-                                    className="inline-flex items-center gap-1 hover:underline"
-                                  >
-                                    <Phone size={12} />
-                                    {uploaderPhone}
-                                  </a>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                              )}
 
-                        <div className="shrink-0">
-                          {downloadUrl ? (
-                            <a
-                              href={downloadUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border bg-white hover:bg-slate-50 text-[#0a2045] border-slate-200"
-                              title="View / Download"
-                            >
-                              <Download size={14} />
-                              Download
-                            </a>
-                          ) : (
-                            <span className="text-xs text-slate-400">No link</span>
-                          )}
+                              {(uploaderName ||
+                                uploaderEmail ||
+                                uploaderPhone) && (
+                                <div className="mt-2 text-xs text-slate-600 space-y-1">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-slate-500">
+                                      Uploaded by:
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 font-medium">
+                                      <User
+                                        size={12}
+                                        className="text-slate-500"
+                                      />
+                                      {uploaderName || "—"}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-3 pl-4">
+                                    {uploaderEmail && (
+                                      <a
+                                        href={`mailto:${uploaderEmail}`}
+                                        className="inline-flex items-center gap-1 hover:underline break-all"
+                                      >
+                                        <Mail size={12} />
+                                        {uploaderEmail}
+                                      </a>
+                                    )}
+                                    {uploaderPhone && (
+                                      <a
+                                        href={`tel:${uploaderPhone}`}
+                                        className="inline-flex items-center gap-1 hover:underline"
+                                      >
+                                        <Phone size={12} />
+                                        {uploaderPhone}
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="shrink-0">
+                              {downloadUrl ? (
+                                <a
+                                  href={downloadUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border bg-white hover:bg-slate-50 text-[#0a2045] border-slate-200"
+                                  title="View / Download"
+                                >
+                                  <Download size={14} />
+                                  Download
+                                </a>
+                              ) : (
+                                <span className="text-xs text-slate-400">
+                                  No link
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -678,145 +688,191 @@ const { mutate: doUpdateStatus, isPending: saving } = useMutation({
                   <p className="text-sm text-slate-500">No activity yet.</p>
                 )}
 
-                {activities.map((a: any, idx: number) => {
-                  const key = a.id ?? a.activityId ?? idx;
-                  const when = a.createdAt ?? a.timestamp ?? a.date ?? a.time;
-                  const whenStr = when ? new Date(when).toLocaleString() : "";
-                  const actorName =
-                    a.performedBy?.name ??
-                    a.actor?.name ??
-                    a.user?.name ??
-                    a.actorName ??
-                    a.userName ??
-                    a.performedBy?.email ??
-                    a.actorEmail ??
-                    a.userEmail ??
-                    "System";
-                  const action = a.action ?? a.type ?? a.event ?? "Updated";
-                  const fromStatus = a.fromStatus ?? a.oldStatus;
-                  const toStatus = a.toStatus ?? a.newStatus;
-                  const reasonText = a.reason ?? "";
+                {/* Scrollable container */}
+                {activities.length > 0 && (
+                  <div className="max-h-96 overflow-y-auto pr-2 space-y-3 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+                    {activities.map((a: any, idx: number) => {
+                      const key = a.id ?? a.activityId ?? idx;
+                      const when =
+                        a.createdAt ?? a.timestamp ?? a.date ?? a.time;
+                      const whenStr = when
+                        ? new Date(when).toLocaleString()
+                        : "";
+                      const actorName =
+                        a.performedBy?.name ??
+                        a.actor?.name ??
+                        a.user?.name ??
+                        a.actorName ??
+                        a.userName ??
+                        a.performedBy?.email ??
+                        a.actorEmail ??
+                        a.userEmail ??
+                        "System";
+                      const action = a.action ?? a.type ?? a.event ?? "Updated";
+                      const fromStatus = a.fromStatus ?? a.oldStatus;
+                      const toStatus = a.toStatus ?? a.newStatus;
+                      const reasonText = a.reason ?? "";
 
-                  return (
-                    <div key={key} className="border rounded-lg p-3 hover:shadow-sm transition">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <User size={16} className="text-slate-500 shrink-0" />
-                            <p className="text-sm font-medium truncate">{actorName}</p>
-                          </div>
+                      return (
+                        <div
+                          key={key}
+                          className="border rounded-lg p-3 hover:shadow-sm transition"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <User
+                                  size={16}
+                                  className="text-slate-500 shrink-0"
+                                />
+                                <p className="text-sm font-medium truncate">
+                                  {actorName}
+                                </p>
+                              </div>
 
-                          <p className="text-xs text-slate-500 mt-1">{whenStr}</p>
+                              <p className="text-xs text-slate-500 mt-1">
+                                {whenStr}
+                              </p>
 
-                          <div className="mt-2 text-sm">
-                            <span className="font-medium">{action}</span>
-                            {(fromStatus || toStatus) && (
-                              <span className="ml-1 inline-flex items-center gap-1">
-                                {fromStatus ? (
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded ${statusBadgeClass(fromStatus)}`}
-                                  >
-                                    {uiStatusLabel(fromStatus)}
+                              <div className="mt-2 text-sm">
+                                <span className="font-medium">{action}</span>
+                                {(fromStatus || toStatus) && (
+                                  <span className="ml-1 inline-flex items-center gap-1">
+                                    {fromStatus ? (
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded ${statusBadgeClass(
+                                          fromStatus
+                                        )}`}
+                                      >
+                                        {uiStatusLabel(fromStatus)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-500">—</span>
+                                    )}
+                                    <span className="mx-1">→</span>
+                                    {toStatus ? (
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded ${statusBadgeClass(
+                                          toStatus
+                                        )}`}
+                                      >
+                                        {uiStatusLabel(toStatus)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-500">—</span>
+                                    )}
                                   </span>
-                                ) : (
-                                  <span className="text-slate-500">—</span>
                                 )}
-                                <span className="mx-1">→</span>
-                                {toStatus ? (
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded ${statusBadgeClass(toStatus)}`}
-                                  >
-                                    {uiStatusLabel(toStatus)}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-500">—</span>
-                                )}
-                              </span>
-                            )}
-                          </div>
+                              </div>
 
-                          {reasonText && (
-                            <p className="text-xs text-slate-600 mt-2 whitespace-pre-wrap">
-                              Reason: {reasonText}
-                            </p>
-                          )}
+                              {reasonText && (
+                                <p className="text-xs text-slate-600 mt-2 whitespace-pre-wrap">
+                                  Reason: {reasonText}
+                                </p>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Action (Approve / Reject) */}
+            {/* Action */}
             {detailsTab === "action" && (
               <div className="space-y-4">
+                {/* FINAL STATE WARNING */}
+                {statusIsLocked && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    This claim is already <b>PAYED</b>. Status changes are permanently locked.
+                  </div>
+                )}
+
+                {/* PAYMENT PROOF WARNING */}
+                {!paymentProofExists && !statusIsLocked && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                    You must upload a <b>PAYMENT_PROOF</b> document before marking this claim as PAYED.
+                  </div>
+                )}
+
+                {/* STATUS OPTIONS */}
                 <div>
                   <p className="text-sm text-slate-600 mb-2">Update status</p>
-                  <div className="flex gap-4">
+                  <div className="flex flex-col gap-3">
                     <label className="inline-flex items-center gap-2">
                       <input
                         type="radio"
-                        name="status"
-                        value="APPROVED"
+                        disabled={statusIsLocked}
                         checked={actionStatus === ClaimStatus.APPROVED}
                         onChange={() => setActionStatus(ClaimStatus.APPROVED)}
                       />
                       <span className="text-sm">Approve</span>
                     </label>
+
                     <label className="inline-flex items-center gap-2">
                       <input
                         type="radio"
-                        name="status"
-                        value="REJECTED"
+                        disabled={statusIsLocked}
                         checked={actionStatus === ClaimStatus.REJECTED}
                         onChange={() => setActionStatus(ClaimStatus.REJECTED)}
                       />
                       <span className="text-sm">Reject</span>
                     </label>
+
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="radio"
+                        disabled={!canMarkPayed}
+                        checked={actionStatus === ClaimStatus.PAYED}
+                        onChange={() => setActionStatus(ClaimStatus.PAYED)}
+                      />
+                      <span className="text-sm">Mark as Payed</span>
+                    </label>
                   </div>
                 </div>
 
+                {/* REASON */}
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-900">
+                  <label className="block text-sm font-medium mb-1">
                     Reason (optional)
                   </label>
                   <textarea
+                    disabled={statusIsLocked}
                     className="w-full min-h-[96px] border rounded-lg px-3 py-2 text-sm"
-                    placeholder="Add a short reason for this decision (max 500 chars)"
                     maxLength={500}
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                   />
-                  <div className="flex justify-between">
-                    <p className="text-xs text-slate-500 mt-1">Max 500 characters.</p>
-                    <p className="text-xs text-slate-400 mt-1">{reason.length}/500</p>
-                  </div>
                 </div>
 
+                {/* ACTION BUTTONS */}
                 <div className="flex gap-2">
                   <button
                     onClick={() => doUpdateStatus()}
-                    disabled={!actionStatus || saving}
+                    disabled={
+                      !actionStatus ||
+                      saving ||
+                      statusIsLocked ||
+                      (actionStatus === ClaimStatus.PAYED && !paymentProofExists)
+                    }
                     className="px-3 py-2 rounded-md bg-[#0a2045] text-white disabled:opacity-50"
                   >
                     {saving ? "Saving..." : "Update Status"}
                   </button>
+
                   <button
+                    disabled={saving || statusIsLocked}
                     onClick={() => {
                       setActionStatus(null);
                       setReason("");
                     }}
-                    disabled={saving}
                     className="px-3 py-2 rounded-md border"
                   >
                     Clear
                   </button>
                 </div>
-
-                <p className="text-xs text-slate-500">
-                  Only transitions from <b>Submitted</b> are allowed for insurer actions.
-                </p>
               </div>
             )}
           </div>
