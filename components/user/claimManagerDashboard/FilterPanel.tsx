@@ -57,6 +57,7 @@ export default function FilterPanel({ filters, onFilter }: FilterPanelProps) {
           type="text"
           value={filters.project}
           onChange={(e) => updateProject(e.target.value)}
+          max={new Date().toISOString().split("T")[0]}
           placeholder="Enter project name"
           className="mt-1 w-full border rounded-lg px-2 py-1 text-sm text-[#0a2045]"
         />
@@ -70,6 +71,7 @@ export default function FilterPanel({ filters, onFilter }: FilterPanelProps) {
             type="date"
             value={filters.fromDate}
             onChange={(e) => updateFromDate(e.target.value)}
+            max={new Date().toISOString().split("T")[0]}
             className="mt-1 w-full border rounded-lg px-2 py-1 text-sm text-[#0a2045]"
           />
         </div>

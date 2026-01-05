@@ -275,13 +275,25 @@ export default function ClaimDetails({
   return (
     <AnimatePresence>
       {selectedClaim && (
-        <motion.div
-          initial={{ x: "100%" }}
-          animate={{ x: 0 }}
-          exit={{ x: "100%" }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="fixed top-0 right-0 w-full sm:w-[420px] h-full bg-white shadow-2xl z-50"
-        >
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/30 z-40"
+          />
+
+          {/* Drawer */}
+          <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            onClick={(e) => e.stopPropagation()} // ⛔ prevent outside click
+            className="fixed top-0 right-0 w-full sm:w-[420px] h-full bg-white shadow-2xl z-50"
+          >
           {/* Header */}
           <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b px-6 py-4 flex items-center justify-between">
             <div className="min-w-0">
@@ -876,7 +888,8 @@ export default function ClaimDetails({
               </div>
             )}
           </div>
-        </motion.div>
+          </motion.div>
+        </>
       )}
     </AnimatePresence>
   );

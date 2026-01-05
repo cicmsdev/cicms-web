@@ -24,6 +24,7 @@ import {
   PieChart as PieIcon,
   BarChart3,
   FileDown,
+  FileText,
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import toast from "react-hot-toast";
@@ -289,6 +290,10 @@ export default function AnalyticsPage() {
     "day"
   );
 
+  const [status, setStatus] = useState<string>("");
+  const [claimType, setClaimType] = useState<string>("");
+  const [insuranceId, setInsuranceId] = useState<string>("");
+
   const setRange = (
     fromStr: string,
     toStr: string,
@@ -335,7 +340,10 @@ export default function AnalyticsPage() {
 
     if (preset === "TODAY") {
       const ymd = toYMD(now);
-      return setRange(ymd, ymd, "day");
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowYmd = toYMD(tomorrow);
+      return setRange(ymd, tomorrowYmd, "day");
     }
 
     if (preset === "LAST_7") {
@@ -375,11 +383,22 @@ export default function AnalyticsPage() {
   const { from: safeFrom, to: safeTo } = clampDateRange(from, to);
 
   const { data, isLoading, isError, error, refetch } = useQuery<Overview>({
-    queryKey: ["analytics", safeFrom || "ALL", safeTo || "ALL", granularity],
+    queryKey: [
+      "analytics",
+      safeFrom,
+      safeTo,
+      granularity,
+      status,
+      claimType,
+      insuranceId,
+    ],
     queryFn: async () => {
       const params = new URLSearchParams({ granularity });
       if (safeFrom) params.set("from", safeFrom);
       if (safeTo) params.set("to", safeTo);
+      if (status) params.set("status", status);
+      if (claimType) params.set("claimType", claimType);
+      if (insuranceId) params.set("companyId", insuranceId);
 
       const res = await fetch(
         `${API_BASE_URL}/analytics/overview?${params.toString()}`,
@@ -392,6 +411,18 @@ export default function AnalyticsPage() {
       return res.json();
     },
     staleTime: 5_000,
+  });
+
+  // fetch insuranca
+  const { data: companies } = useQuery({
+    queryKey: ["insurance-companies"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE_URL}/insurance/options`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to load insurance companies");
+      return res.json();
+    },
   });
 
   /** Cards for each status (includes zeros; aliases folded in). */
@@ -480,21 +511,20 @@ export default function AnalyticsPage() {
   );
 
   const statusLabel = (props: any): React.ReactNode => {
-  const value = Number(props?.value) || 0;
-  const rawName =
-    props?.payload?.name ??
-    (typeof props?.name === "string" ? props.name : "");
-  return `${humanize(rawName)} (${pct(value, statusTotal)})`;
-};
+    const value = Number(props?.value) || 0;
+    const rawName =
+      props?.payload?.name ??
+      (typeof props?.name === "string" ? props.name : "");
+    return `${humanize(rawName)} (${pct(value, statusTotal)})`;
+  };
 
-const claimTypeLabel = (props: any): React.ReactNode => {
-  const value = Number(props?.value) || 0;
-  const rawType =
-    props?.payload?.type ??
-    (typeof props?.name === "string" ? props.name : "");
-  return `${humanize(rawType)} (${pct(value, claimTypeTotal)})`;
-};
-
+  const claimTypeLabel = (props: any): React.ReactNode => {
+    const value = Number(props?.value) || 0;
+    const rawType =
+      props?.payload?.type ??
+      (typeof props?.name === "string" ? props.name : "");
+    return `${humanize(rawType)} (${pct(value, claimTypeTotal)})`;
+  };
 
   const statusTooltipFormatter = (value: number, name: string) => [
     `${value} (${pct(Number(value) || 0, statusTotal)})`,
@@ -674,6 +704,173 @@ const claimTypeLabel = (props: any): React.ReactNode => {
     doc.save(`${makeBaseName()}.pdf`);
   };
 
+  // claim report
+  const handleExportClaimReportPDF = async () => {
+    try {
+      /* ================= Build query ================= */
+      const qs = new URLSearchParams();
+
+      if (from) qs.set("startDate", from);
+      if (to) qs.set("endDate", to);
+      if (status) qs.set("status", status);
+      if (claimType) qs.set("claimType", claimType);
+      if (insuranceId) qs.set("companyId", insuranceId);
+
+      const headers: HeadersInit = { Accept: "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      /* ================= Fetch claims ================= */
+      const res = await fetch(
+        `${API_BASE_URL}/reports/claims?${qs.toString()}`,
+        { headers }
+      );
+
+      if (!res.ok) {
+        toast.error("Failed to generate claim report");
+        return;
+      }
+
+      const claims = await res.json();
+      if (!Array.isArray(claims) || claims.length === 0) {
+        toast.error("No claims found for selected filters");
+        return;
+      }
+
+      /* ================= Metadata ================= */
+      const generatedBy = exporterName || "—";
+      const signatureDate = formatExportTime();
+
+      const selectedInsurance = claims[0]?.company;
+      const approvedBy =
+        insuranceId && selectedInsurance?.representatives?.length
+          ? selectedInsurance.representatives[0].name
+          : null;
+
+      /* ================= Init PDF ================= */
+      const jsPDFmod = await import("jspdf");
+      const autoTableMod = await import("jspdf-autotable");
+      const jsPDF = (jsPDFmod as any).default ?? (jsPDFmod as any);
+
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      let y = 10;
+
+      /* ================= Logo ================= */
+      try {
+        const logoDataUrl = await toDataURL("/logo.png");
+        const imgW = 26;
+        const imgH = 26;
+        const imgX = (pageWidth - imgW) / 2;
+        doc.addImage(logoDataUrl, "PNG", imgX, y, imgW, imgH);
+        y += imgH + 6;
+      } catch {}
+
+      /* ================= Title ================= */
+      doc.setFontSize(14);
+      const title = "Claim Report";
+      const titleX = pageWidth / 2 - doc.getTextWidth(title) / 2;
+      doc.text(title, titleX, y);
+      y += 7;
+
+      /* ================= Filters ================= */
+      doc.setFontSize(10);
+      const filterText =
+        `Insurance: ${selectedInsurance?.name || "All"} | ` +
+        `Status: ${status ? humanize(status) : "All"} | ` +
+        `Type: ${claimType ? humanize(claimType) : "All"}`;
+      const filterX = pageWidth / 2 - doc.getTextWidth(filterText) / 2;
+      doc.text(filterText, filterX, y);
+      y += 6;
+
+      const periodText = `Period: ${from} → ${to}`;
+      const periodX = pageWidth / 2 - doc.getTextWidth(periodText) / 2;
+      doc.text(periodText, periodX, y);
+      y += 8;
+
+      /* ================= Table ================= */
+      const head = [
+        [
+          "Claim Title",
+          "Status",
+          "Type",
+          "Insurance",
+          "Submitted By",
+          "Evaluator",
+          "Submission Date",
+        ],
+      ];
+
+      const body = claims.map((c: any) => [
+        c.ClaimTitle,
+        humanize(c.status),
+        humanize(c.claimType),
+        c.company?.name ?? "-",
+        c.submittedBy?.name ?? "-",
+        c.evaluator?.name ?? "-",
+        new Date(c.submissionDate).toLocaleDateString(),
+      ]);
+
+      (autoTableMod as any).default(doc, {
+        head,
+        body,
+        startY: y,
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fontSize: 9 },
+        margin: { left: 14, right: 14, bottom: 18 },
+        didDrawPage: () => {
+          // FOOTER: Page number only
+          doc.setFontSize(9);
+          doc.setTextColor(90);
+
+          const pageStr = `Page ${doc.getCurrentPageInfo().pageNumber}`;
+          const pageX = pageWidth / 2 - doc.getTextWidth(pageStr) / 2;
+          doc.text(pageStr, pageX, pageHeight - 8);
+        },
+      });
+
+      /* ================= BELOW TABLE: SIGNATURES ================= */
+      const finalY = (doc as any).lastAutoTable.finalY + 10;
+
+      doc.setFontSize(10);
+      doc.setTextColor(40);
+
+      // LEFT: Generated by
+      doc.text(`Generated by: ${generatedBy}`, 14, finalY);
+      doc.line(14, finalY + 6, 80, finalY + 6);
+      doc.setFontSize(9);
+      doc.text("Signature", 14, finalY + 10);
+      doc.text(`Date: ${signatureDate}`, 14, finalY + 15);
+
+      // RIGHT: Approved by
+      if (approvedBy) {
+        const apprX = doc.internal.pageSize.getWidth() - 14 - 60; // same line, right side
+        doc.setFontSize(10);
+        doc.text(`Approved by: ${approvedBy}`, apprX, finalY);
+        doc.line(apprX, finalY + 6, apprX + 60, finalY + 6);
+        doc.setFontSize(9);
+        doc.text("Signature", apprX, finalY + 10);
+        doc.text(`Date: ${signatureDate}`, apprX, finalY + 15);
+      }
+
+      /* ================= Save ================= */
+      doc.save(
+        `claim_report_${from}_${to}_${status || "ALL"}_${
+          claimType || "ALL"
+        }.pdf`
+      );
+
+      toast.success("Claim Report PDF generated");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to generate claim report PDF");
+    }
+  };
+
   //claim report for contractors
   const handleExportContractorPDF = async () => {
     try {
@@ -683,11 +880,11 @@ const claimTypeLabel = (props: any): React.ReactNode => {
       qs.set("dateTo", safeTo);
       qs.set("format", "json");
 
-       const headers: HeadersInit = { Accept: "application/json" };
+      const headers: HeadersInit = { Accept: "application/json" };
 
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
 
       const res = await fetch(
         `${API_BASE_URL}/reports/contractors-claims?${qs.toString()}`,
@@ -720,10 +917,10 @@ const claimTypeLabel = (props: any): React.ReactNode => {
       const autoTableMod = await import("jspdf-autotable");
       const jsPDF = (jsPDFmod as any).default ?? (jsPDFmod as any);
       const doc = new jsPDF({
-  orientation: "landscape",
-  unit: "mm",
-  format: "a4",
-});
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
 
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
@@ -871,6 +1068,22 @@ const claimTypeLabel = (props: any): React.ReactNode => {
               <FileDown className="w-4 h-4" />
               Contractor Claims PDF
             </button>
+            <button
+              onClick={handleExportClaimReportPDF}
+              className="
+    flex items-center gap-2
+    bg-indigo-600 hover:bg-indigo-700
+    text-white
+    px-4 py-2
+    rounded-lg
+    text-sm font-medium
+    transition
+    disabled:opacity-50
+  "
+            >
+              <FileText size={18} />
+              Export Claim Report (PDF)
+            </button>
           </div>
 
           {/* Compact export (mobile) */}
@@ -885,15 +1098,17 @@ const claimTypeLabel = (props: any): React.ReactNode => {
             From
           </label>
           <div className="flex items-center gap-2 border rounded-xl px-3 py-2 bg-white">
-            <CalendarIcon className="w-4 h-4 text-[#0a2045]" />
-            <input
-              id="from-date"
-              type="date"
-              value={safeFrom}
-              onChange={(e) => setFrom(e.target.value)}
-              className="w-full outline-none text-gray-900"
-            />
-          </div>
+  <CalendarIcon className="w-4 h-4 text-[#0a2045]" />
+  <input
+    id="from-date"
+    type="date"
+    value={safeFrom}
+    onChange={(e) => setFrom(e.target.value)}
+    max={new Date().toISOString().split("T")[0]} // ✅ Max is today
+    className="w-full outline-none text-gray-900"
+  />
+</div>
+
         </div>
         <div>
           <label className="block text-sm text-gray-600" htmlFor="to-date">
@@ -906,6 +1121,7 @@ const claimTypeLabel = (props: any): React.ReactNode => {
               type="date"
               value={safeTo}
               onChange={(e) => setTo(e.target.value)}
+              max={new Date().toISOString().split("T")[0]}
               className="w-full outline-none text-gray-900"
             />
           </div>
@@ -928,11 +1144,22 @@ const claimTypeLabel = (props: any): React.ReactNode => {
           </select>
         </div>
         <div>
-          <button
+          {/* <button
             onClick={() => refetch()}
             className="w-full px-3 py-2 rounded-xl bg-[#0a2045] text-white hover:opacity-90"
           >
             Apply
+          </button> */}
+          <button
+            onClick={() => {
+              setStatus("");
+              setClaimType("");
+              setInsuranceId("");
+              refetch();
+            }}
+            className="px-3 py-2 rounded-xl border  bg-[#0a2045] text-white hover:opacity-90"
+          >
+            Reset Filters
           </button>
         </div>
       </div>
@@ -981,6 +1208,77 @@ const claimTypeLabel = (props: any): React.ReactNode => {
         >
           Last 30 Days
         </button>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-3">
+        {/* Insurance Company */}
+        <div>
+          <label className="block text-sm text-gray-900">
+            Insurance Company
+          </label>
+          <select
+            value={insuranceId}
+            onChange={(e) => setInsuranceId(e.target.value)}
+            className="border rounded-xl px-3 py-2 w-full text-blue-600"
+          >
+            <option value="">All Companies</option>
+            {companies?.map((c: any) => (
+              <option key={c.companyId} value={c.companyId}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Claim Type */}
+        <div>
+          <label className="block text-sm text-gray-900">Claim Type</label>
+          <select
+            value={claimType}
+            onChange={(e) => setClaimType(e.target.value)}
+            className="border rounded-xl px-3 py-2 w-full text-blue-600"
+          >
+            <option value="">All Types</option>
+            {[
+              "MATERIAL_DAMAGE",
+              "EQUIPMENT_DAMAGE",
+              "WORKSITE_ACCIDENT",
+              "STRUCTURAL_FAILURE",
+              "FIRE",
+              "NATURAL_DISASTER",
+              "ACCIDENT",
+            ].map((t) => (
+              <option key={t} value={t}>
+                {humanize(t)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Claim Status */}
+        <div>
+          <label className="block text-sm text-gray-900">Claim Status</label>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="border rounded-xl px-3 py-2 w-full text-blue-600"
+          >
+            <option value="">All Statuses</option>
+            {[
+              "SUBMITTED",
+              "IN_EVALUATION",
+              "APPROVED",
+              "REJECTED",
+              "RESOLVED",
+              "RESOLVED_IN_COURT",
+              "PAYED",
+            ].map((s) => (
+              <option key={s} value={s}>
+                {humanize(s)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Status cards */}

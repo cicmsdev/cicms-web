@@ -134,7 +134,9 @@ export default function UploadPaymentProofPage() {
       const failed = results.filter((r) => r.status === "rejected").length;
       if (failed > 0) {
         toast.error(
-          `Uploaded ${toUpload.length - failed}/${toUpload.length} documents. Some failed.`
+          `Uploaded ${toUpload.length - failed}/${
+            toUpload.length
+          } documents. Some failed.`
         );
       }
     },
@@ -144,7 +146,9 @@ export default function UploadPaymentProofPage() {
       qc.invalidateQueries({ queryKey: ["claim", claimId] });
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.message || err?.message || "Failed to upload");
+      toast.error(
+        err?.response?.data?.message || err?.message || "Failed to upload"
+      );
     },
   });
 
@@ -220,7 +224,7 @@ export default function UploadPaymentProofPage() {
                         <p className="text-xs text-gray-500">{createdAtStr}</p>
                       )}
                       <span className="mt-1 inline-block text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                        {ALLOWED_TYPE}
+                        {d.documentType}
                       </span>
                     </div>
                     {downloadUrl && (
@@ -358,8 +362,8 @@ export default function UploadPaymentProofPage() {
             </div>
           ) : (
             <p className="text-sm text-gray-500">
-              No documents added. Click <span className="font-medium">Add
-              document</span> to start.
+              No documents added. Click{" "}
+              <span className="font-medium">Add document</span> to start.
             </p>
           )}
         </div>

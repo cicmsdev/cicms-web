@@ -7,6 +7,23 @@ import {
   Paginated,
   QueryClaimsParams,
 } from "@/lib/claims";
+import axios from "axios";
+
+export type ClaimReportQuery = {
+  status?: string;
+  claimType?: string;
+  companyId?: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+export async function getClaimReport(query: ClaimReportQuery) {
+  const res = await api.get("/reports/claims", {
+    params: query,
+  });
+  return res.data;
+}
+
 
 function handleError(error: any): never {
   const msg =
@@ -91,3 +108,5 @@ export const getManagerDashboard = async (): Promise<DashboardResponse> => {
     handleError(error);
   }
 };
+
+

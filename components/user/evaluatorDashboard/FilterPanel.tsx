@@ -70,6 +70,7 @@ export default function FilterPanel({ filters, onFilter }: FilterPanelProps) {
             type="date"
             value={filters.fromDate}
             onChange={(e) => updateFromDate(e.target.value)}
+            max={new Date().toISOString().split("T")[0]}
             className="mt-1 w-full border rounded-lg px-2 py-1 text-sm text-[#0a2045]"
           />
         </div>
@@ -79,6 +80,7 @@ export default function FilterPanel({ filters, onFilter }: FilterPanelProps) {
             type="date"
             value={filters.toDate}
             onChange={(e) => updateToDate(e.target.value)}
+            max={new Date().toISOString().split("T")[0]}
             className="mt-1 w-full border rounded-lg px-2 py-1 text-sm text-[#0a2045]"
           />
         </div>
