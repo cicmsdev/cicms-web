@@ -1,0 +1,241 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+
+import Header from "./insuranceRepDashboard/Header";
+import Navigation, { type Tab } from "./insuranceRepDashboard/Navigation";
+import FilterPanel from "./insuranceRepDashboard/FilterPanel";
+import Overview from "./insuranceRepDashboard/Overview";
+import Claims from "./insuranceRepDashboard/InsurClaims";
+import ClaimDetails from "./insuranceRepDashboard/InsurClaimDetails";
+import MobileNavDrawer from "./insuranceRepDashboard/MobileNavDrawer";
+import MobileFilterDrawer from "./insuranceRepDashboard/MobileFilterDrawer";
+
+import type { QueryClaimsParams } from "@/lib/claims";
+import { UiClaim, UiFilters, toUiClaim, uiToStatus } from "@/lib/uiClaims";
+import {
+  getInsuranceDashboard,
+  listInsuranceClaims,
+} from "../../services/claims/insurer/insurerClaims.api";
+import MessagesTab from "../chat/MessagesTab";
+import { useDmContacts } from "@/hooks/useDmContacts";
+import MyNotificationsPanel from "../notifications/MyNotificationsPanel";
+import { useUnreadCount } from "@/hooks/useNotifications";
+import { useMyNotificationsPaged } from "@/hooks/useNotifications";
+import Footer from "./footer";
+
+
+
+export default function InsuranceRepDashboard() {
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const { data: unreadData } = useUnreadCount();
+  const notifCount = unreadData?.count ?? 0;
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [messagesUnread, setMessagesUnread] = useState(0);
+
+  const showFilters = activeTab === "claims";
+
+  // UI filters (Claims tab only)
+  const [filters, setFilters] = useState<UiFilters>({
+    status: [],
+    project: "",
+    fromDate: "",
+    toDate: "",
+  });
+
+  // Build backend params (only when on Claims tab)
+  const params: QueryClaimsParams = useMemo(() => {
+    if (!showFilters) return { page: 1, pageSize: 100 };
+
+    const statuses = filters.status.map((s) => uiToStatus[s]);
+    const statusCSV = statuses.length ? statuses.join(",") : undefined;
+
+    return {
+      status: statusCSV,
+      search: filters.project || undefined,
+      submittedFrom: filters.fromDate || undefined,
+      submittedTo: filters.toDate || undefined,
+      page: 1,
+      pageSize: 100,
+    };
+  }, [showFilters, filters]);
+
+  // Claims list
+  const {
+    data: claimsPage,
+    isLoading: claimsLoading,
+    isError: claimsError,
+    error: claimsErrObj,
+    refetch: refetchClaims,
+  } = useQuery({
+    queryKey: ["insurerClaims", params],
+    queryFn: () => listInsuranceClaims(params),
+    staleTime: 30_000,
+  });
+
+  // Dashboard summary/recent
+  const { data: dashboard, isLoading: dashLoading } = useQuery({
+    queryKey: ["insurerDashboard"],
+    queryFn: () => getInsuranceDashboard(),
+    staleTime: 60_000,
+  });
+
+  // Transform API -> UI
+  const apiClaims = claimsPage?.data ?? [];
+  const uiClaims: UiClaim[] = useMemo(
+    () => apiClaims.map(toUiClaim),
+    [apiClaims]
+  );
+
+  const totalClaims = dashboard?.summary?.totalClaims ?? uiClaims.length;
+
+  // Client filtering (Claims tab only)
+  const filteredClaims: UiClaim[] = useMemo(() => {
+    if (!showFilters) return uiClaims;
+    return uiClaims.filter((c) => {
+      const statusMatch =
+        filters.status.length === 0 || filters.status.includes(c.status);
+      const projectMatch =
+        filters.project === "" ||
+        c.projectName.toLowerCase().includes(filters.project.toLowerCase());
+      const fromDateMatch =
+        !filters.fromDate ||
+        new Date(c.incidentDate) >= new Date(filters.fromDate);
+      const toDateMatch =
+        !filters.toDate || new Date(c.incidentDate) <= new Date(filters.toDate);
+      return statusMatch && projectMatch && fromDateMatch && toDateMatch;
+    });
+  }, [uiClaims, showFilters, filters]);
+
+  // Selected claim for details
+  const [selectedClaim, setSelectedClaim] = useState<UiClaim | null>(null);
+  const [dmSearch, setDmSearch] = useState("");
+  const { data: dmPeers = [], isLoading: dmLoading } = useDmContacts(
+    dmSearch,
+    50
+  );
+
+  // latest notifications (first page, 5 items)
+  const { data: latestNotifs, isLoading: latestNotifsLoading } = useMyNotificationsPaged({
+    page: 1,
+    pageSize: 5,
+    filters: { includeArchived: false }, // feel free to add unreadOnly: true if you prefer
+  });
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Header */}
+      <Header
+        onOpenNav={() => setMobileNavOpen(true)}
+        onOpenFilter={showFilters ? () => setMobileFilterOpen(true) : undefined}
+      />
+
+      {/* Navigation */}
+
+      <Navigation
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        notifCount={notifCount}
+        messagesCount={messagesUnread}
+      />
+
+      <div className="flex">
+        {/* Desktop filters — only on Claims tab */}
+        {showFilters && (
+          <aside className="hidden md:block w-64 bg-white border-r">
+            <FilterPanel filters={filters} onFilter={setFilters} />
+          </aside>
+        )}
+
+        {/* Main */}
+        <main className="flex-1 p-6">
+          {(claimsLoading || dashLoading) && (
+            <div className="text-sm text-gray-500">Loading…</div>
+          )}
+          {claimsError && (
+            <div className="text-sm text-red-600">
+              {(claimsErrObj as Error)?.message || "Failed to load claims"}
+              <button
+                onClick={() => refetchClaims()}
+                className="ml-3 px-2 py-1 text-xs rounded border"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!claimsLoading && !claimsError && (
+            <>
+              {activeTab === "overview" && (
+                <Overview
+                  claims={uiClaims} // unfiltered for overview
+                  total={totalClaims}
+                  onSelectClaim={setSelectedClaim}
+                  // latest notifications props
+                latestNotifications={latestNotifs?.notifications ?? []}
+                latestNotificationsLoading={latestNotifsLoading}
+                onOpenNotifications={() => setActiveTab("notifications")}
+                />
+              )}
+              {activeTab === "claims" && (
+                <Claims
+                  claims={filteredClaims} // filtered for claims tab
+                  onSelectClaim={setSelectedClaim}
+                />
+              )}
+              {activeTab === "messages" && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    {dmLoading && (
+                      <span className="text-xs text-gray-500">
+                        Loading contacts…
+                      </span>
+                    )}
+                  </div>
+
+                  <MessagesTab
+                    claims={uiClaims}
+                    dmPeers={dmPeers}
+                    showSideSearch // ← enable search for claims/contacts
+                    onUnreadChange={setMessagesUnread}
+                  />
+                </div>
+              )}
+              {activeTab === "notifications" && <MyNotificationsPanel />}
+            </>
+          )}
+        </main>
+      </div>
+
+      {/* Mobile navigation */}
+      <MobileNavDrawer
+        open={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+      />
+
+      {/* Mobile filters — only render on Claims tab */}
+      {showFilters && (
+        <MobileFilterDrawer
+          open={mobileFilterOpen}
+          onClose={() => setMobileFilterOpen(false)}
+          filters={filters}
+          onFilter={setFilters}
+        />
+      )}
+
+      {/* Claim details drawer */}
+      {selectedClaim && (
+        <ClaimDetails
+          selectedClaim={selectedClaim}
+          onClose={() => setSelectedClaim(null)}
+        />
+      )}
+      {/* Footer */}
+      <Footer />
+    </div>
+  );
+}
