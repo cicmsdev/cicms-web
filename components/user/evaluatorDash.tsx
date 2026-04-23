@@ -23,6 +23,7 @@ import MessagesTab from "../chat/MessagesTab";
 import { useUnreadCount } from "@/hooks/useNotifications";
 import MyNotificationsPanel from "../notifications/MyNotificationsPanel";
 import { useMyNotificationsPaged } from "@/hooks/useNotifications";
+import Footer from "./footer";
 
 export default function EvaluatorDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
@@ -139,7 +140,7 @@ export default function EvaluatorDashboard() {
     });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <Header
         onOpenNav={() => setMobileNavOpen(true)}
@@ -248,6 +249,8 @@ export default function EvaluatorDashboard() {
           onUpdate={handleClaimUpdate}
         />
       )}
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }

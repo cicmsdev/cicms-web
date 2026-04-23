@@ -334,38 +334,44 @@ export default function AnalyticsPage() {
   const applyPreset = (preset: Preset) => {
     const now = new Date();
 
+    const todayYmd = toYMD(now);
+
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowYmd = toYMD(tomorrow);
+
     if (preset === "ALL") {
-      return setRange(DEFAULT_FROM, todayStr, "day");
+      return setRange(DEFAULT_FROM, tomorrowYmd, "day");
     }
 
     if (preset === "TODAY") {
-      const ymd = toYMD(now);
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowYmd = toYMD(tomorrow);
-      return setRange(ymd, tomorrowYmd, "day");
+      return setRange(todayYmd, tomorrowYmd, "day");
     }
 
     if (preset === "LAST_7") {
       const from = new Date(now);
       from.setDate(from.getDate() - 6);
-      return setRange(toYMD(from), toYMD(now), "day");
+
+      return setRange(toYMD(from), tomorrowYmd, "day");
     }
 
     if (preset === "LAST_30") {
       const from = new Date(now);
       from.setDate(from.getDate() - 29);
-      return setRange(toYMD(from), toYMD(now), "day");
+
+      return setRange(toYMD(from), tomorrowYmd, "day");
     }
 
     if (preset === "THIS_WEEK") {
-      const mon = startOfWeekISO(now);
-      return setRange(toYMD(mon), toYMD(now), "day");
+      const from = startOfWeekISO(now);
+
+      return setRange(toYMD(from), tomorrowYmd, "day");
     }
 
     if (preset === "THIS_MONTH") {
-      const first = startOfMonth(now);
-      return setRange(toYMD(first), toYMD(now), "day");
+      const from = startOfMonth(now);
+
+      return setRange(toYMD(from), tomorrowYmd, "day");
     }
   };
 
@@ -1098,17 +1104,16 @@ export default function AnalyticsPage() {
             From
           </label>
           <div className="flex items-center gap-2 border rounded-xl px-3 py-2 bg-white">
-  <CalendarIcon className="w-4 h-4 text-[#0a2045]" />
-  <input
-    id="from-date"
-    type="date"
-    value={safeFrom}
-    onChange={(e) => setFrom(e.target.value)}
-    max={new Date().toISOString().split("T")[0]} // ✅ Max is today
-    className="w-full outline-none text-gray-900"
-  />
-</div>
-
+            <CalendarIcon className="w-4 h-4 text-[#0a2045]" />
+            <input
+              id="from-date"
+              type="date"
+              value={safeFrom}
+              onChange={(e) => setFrom(e.target.value)}
+              max={new Date().toISOString().split("T")[0]} // ✅ Max is today
+              className="w-full outline-none text-gray-900"
+            />
+          </div>
         </div>
         <div>
           <label className="block text-sm text-gray-600" htmlFor="to-date">

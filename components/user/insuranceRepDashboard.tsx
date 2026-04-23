@@ -23,6 +23,7 @@ import { useDmContacts } from "@/hooks/useDmContacts";
 import MyNotificationsPanel from "../notifications/MyNotificationsPanel";
 import { useUnreadCount } from "@/hooks/useNotifications";
 import { useMyNotificationsPaged } from "@/hooks/useNotifications";
+import Footer from "./footer";
 
 
 
@@ -124,7 +125,7 @@ export default function InsuranceRepDashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <Header
         onOpenNav={() => setMobileNavOpen(true)}
@@ -233,6 +234,8 @@ export default function InsuranceRepDashboard() {
           onClose={() => setSelectedClaim(null)}
         />
       )}
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }

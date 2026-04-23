@@ -23,6 +23,7 @@ import { UiClaim, UiFilters, toUiClaim, uiToStatus } from "@/lib/uiClaims";
 import { useDmContacts } from "@/hooks/useDmContacts";
 import { useUnreadCount } from "@/hooks/useNotifications";
 import { useMyNotificationsPaged } from "@/hooks/useNotifications";
+import Footer from "./footer";
 
 export default function ContractorDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
@@ -123,7 +124,7 @@ export default function ContractorDashboard() {
     });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header
         onOpenNav={() => setMobileNavOpen(true)}
         onOpenFilter={showFilters ? () => setMobileFilterOpen(true) : undefined}
@@ -226,6 +227,7 @@ export default function ContractorDashboard() {
           onClose={() => setSelectedClaim(null)}
         />
       )}
+      <Footer/>
     </div>
   );
 }

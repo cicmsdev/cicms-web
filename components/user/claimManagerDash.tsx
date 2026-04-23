@@ -25,6 +25,7 @@ import AdminNotificationsPanel from "../notifications/AdminNotificationsPanel";
 import UsersList from "./claimManagerDashboard/UsersList";
 import { useAdminNotificationsPaged } from "@/hooks/useAdminNotifications";
 import { useAuth } from "../../context/AuthContext";
+import Footer from "./footer";
 
 
 
@@ -148,7 +149,7 @@ export default function ManagerDashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <Header
         onOpenNav={() => setMobileNavOpen(true)}
@@ -260,6 +261,8 @@ export default function ManagerDashboard() {
           onClose={() => setSelectedClaim(null)}
         />
       )}
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }
